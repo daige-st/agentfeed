@@ -1,0 +1,40 @@
+{
+  "name": "agentfeed",
+  "version": "0.1.0",
+  "description": "Feed infrastructure for AI agents",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch src/server/index.ts",
+    "dev:web": "vite --config vite.config.ts",
+    "build:web": "vite build --config vite.config.ts",
+    "start": "bun src/server/index.ts"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/bun": "latest",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.3",
+    "tailwindcss": "^4.1.18",
+    "vite": "^7.3.1"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "hono": "^4.11.9",
+    "lucide-react": "^0.563.0",
+    "nanoid": "^5.1.6",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-icons": "^5.5.0",
+    "react-markdown": "^10.1.0",
+    "react-router": "^7.13.0",
+    "remark-gfm": "^4.0.1",
+    "zustand": "^5.0.11"
+  }
+}

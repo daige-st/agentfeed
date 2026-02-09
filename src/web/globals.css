@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+:root {
+  --font-pretendard: "Pretendard Variable", Pretendard, -apple-system,
+    BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI",
+    "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic",
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+
+  /* Brand */
+  --color-primary: #3b2f2c;
+  --color-primary-hover: #2a201e;
+
+  /* Surface */
+  --surface: #ffffff;
+  --surface-secondary: #f3f4f6;
+  --surface-tertiary: #fafaf9;
+  --surface-hover: #f5f5f4;
+  --surface-active: #e7e5e4;
+
+  /* Header / Panel */
+  --header-bg: #f5f4f1;
+
+  /* Card */
+  --card-bg: #ffffff;
+  --card-border: #e5e7eb;
+
+  /* Text */
+  --text-primary: #1c1917;
+  --text-secondary: #78716c;
+  --text-tertiary: #a8a29e;
+  --text-inverse: #ffffff;
+
+  /* Border */
+  --border-default: #e7e5e4;
+  --border-secondary: #d6d3d1;
+  --border-subtle: #f5f5f4;
+
+  /* Accent */
+  --accent: #3b2f2c;
+  --accent-hover: #2a201e;
+  --accent-foreground: #ffffff;
+
+  /* Interactive */
+  --interactive-hover: #f5f5f4;
+  --interactive-active: #e7e5e4;
+
+  /* Semantic */
+  --success: #22c55e;
+  --success-hover: #16a34a;
+  --danger: #ef4444;
+  --danger-hover: #dc2626;
+
+  /* Z-Index */
+  --z-index-overlay: 10;
+  --z-index-content: 20;
+  --z-index-nav: 50;
+  --z-index-modal: 60;
+  --z-index-dropdown: 100;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #ffffff;
+    --color-primary-hover: #e5e5e5;
+
+    --surface: #0d0d0d;
+    --surface-secondary: #1a1a1a;
+    --surface-tertiary: #141414;
+    --surface-hover: #1a1a1a;
+    --surface-active: #262626;
+
+    --header-bg: #141414;
+
+    --card-bg: #1f1f1f;
+    --card-border: #3a3a3a;
+
+    --text-primary: #fafaf9;
+    --text-secondary: #a8a29e;
+    --text-tertiary: #78716c;
+    --text-inverse: #0d0d0d;
+
+    --border-default: #44403c;
+    --border-secondary: #4a4a4a;
+    --border-subtle: #1a1a1a;
+
+    --accent: #ffffff;
+    --accent-hover: #e5e5e5;
+    --accent-foreground: #0d0d0d;
+
+    --interactive-hover: #44403c;
+    --interactive-active: #262626;
+  }
+}
+
+@theme {
+  --font-sans: var(--font-pretendard);
+
+  --color-surface: var(--surface);
+  --color-surface-secondary: var(--surface-secondary);
+  --color-surface-tertiary: var(--surface-tertiary);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+
+  --color-header-bg: var(--header-bg);
+  --color-card-bg: var(--card-bg);
+  --color-card-border: var(--card-border);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-inverse: var(--text-inverse);
+
+  --color-border-default: var(--border-default);
+  --color-border-secondary: var(--border-secondary);
+  --color-border-subtle: var(--border-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-interactive-hover: var(--interactive-hover);
+  --color-interactive-active: var(--interactive-active);
+
+  --color-success: var(--success);
+  --color-success-hover: var(--success-hover);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+}
+
+@layer base {
+  body {
+    font-family: var(--font-pretendard);
+    background-color: var(--surface);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+@media (max-width: 767px) {
+  .animate-slide-up {
+    animation: slide-up 0.3s ease-out;
+  }
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
