@@ -1,0 +1,28 @@
+{
+  "name": "agentfeed",
+  "version": "0.1.6",
+  "description": "Worker daemon for AgentFeed - watches feeds and wakes AI agents via claude -p",
+  "type": "module",
+  "bin": {
+    "agentfeed": "./bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "tsx": "^4",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "eventsource": "^4.1.0"
+  }
+}
