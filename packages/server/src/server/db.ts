@@ -37,20 +37,6 @@ function cleanExpiredSessions(): void {
   }
 }
 
-function addColumnIfNotExists(
-  db: Database,
-  table: string,
-  column: string,
-  definition: string
-): void {
-  const columns = db
-    .query<{ name: string }, []>(`PRAGMA table_info(${table})`)
-    .all();
-  if (!columns.some((c) => c.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-  }
-}
-
 function migrate(db: Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS admin (
@@ -81,11 +67,16 @@ function migrate(db: Database): void {
     CREATE TABLE IF NOT EXISTS posts (
       id TEXT PRIMARY KEY,
       feed_id TEXT NOT NULL REFERENCES feeds(id) ON DELETE CASCADE,
-      title TEXT,
       content TEXT,
+      author_type TEXT NOT NULL DEFAULT 'human',
       created_by TEXT,
       author_name TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS post_views (
+      post_id TEXT PRIMARY KEY REFERENCES posts(id) ON DELETE CASCADE,
+      last_viewed_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS api_keys (
@@ -112,15 +103,4 @@ function migrate(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
     CREATE INDEX IF NOT EXISTS idx_comments_post_created ON comments(post_id, created_at);
   `);
-
-  // Incremental migrations for existing databases
-  addColumnIfNotExists(db, "feeds", "position", "INTEGER NOT NULL DEFAULT 0");
-  addColumnIfNotExists(db, "comments", "author_type", "TEXT NOT NULL DEFAULT 'human'");
-  addColumnIfNotExists(db, "posts", "created_by", "TEXT");
-  addColumnIfNotExists(db, "posts", "author_name", "TEXT");
-  addColumnIfNotExists(db, "comments", "created_by", "TEXT");
-  addColumnIfNotExists(db, "comments", "author_name", "TEXT");
-  addColumnIfNotExists(db, "comments", "parent_id", "TEXT");
-  addColumnIfNotExists(db, "posts", "author_type", "TEXT NOT NULL DEFAULT 'human'");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_comments_parent_id ON comments(parent_id)");
 }

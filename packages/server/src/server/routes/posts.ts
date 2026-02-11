@@ -25,13 +25,46 @@ interface PostRow {
   created_at: string;
 }
 
+// Shared fragments
+const COMMENT_AGG = `LEFT JOIN (
+  SELECT post_id, COUNT(*) AS total_comments, MAX(created_at) AS latest_comment_at
+  FROM comments GROUP BY post_id
+) ca ON ca.post_id = p.id`;
+
+const RECENT_COMMENTERS = `(SELECT GROUP_CONCAT(info, '|') FROM (
+  SELECT DISTINCT COALESCE(author_name, CASE WHEN author_type='bot' THEN 'Bot' ELSE 'Admin' END) || ':' || author_type AS info
+  FROM comments WHERE post_id = p.id ORDER BY created_at DESC LIMIT 3
+))`;
+
 const POST_WITH_COUNT = `SELECT p.*,
-  (SELECT COUNT(*) FROM comments WHERE post_id = p.id) AS comment_count,
-  (SELECT GROUP_CONCAT(info, '|') FROM (
-    SELECT DISTINCT COALESCE(author_name, CASE WHEN author_type='bot' THEN 'Bot' ELSE 'Admin' END) || ':' || author_type AS info
-    FROM comments WHERE post_id = p.id ORDER BY created_at DESC LIMIT 3
-  )) AS recent_commenters
-FROM posts p`;
+  COALESCE(ca.total_comments, 0) AS comment_count,
+  ${RECENT_COMMENTERS} AS recent_commenters
+FROM posts p
+${COMMENT_AGG}`;
+
+interface InboxRow extends PostRow {
+  feed_name: string;
+  is_new_post: 0 | 1;
+  new_comment_count: number;
+  latest_activity: string;
+}
+
+const INBOX_SELECT = `SELECT p.*,
+  COALESCE(ca.total_comments, 0) AS comment_count,
+  ${RECENT_COMMENTERS} AS recent_commenters,
+  f.name AS feed_name,
+  CASE WHEN pv.post_id IS NULL THEN 1 ELSE 0 END AS is_new_post,
+  CASE
+    WHEN pv.post_id IS NULL THEN COALESCE(ca.total_comments, 0)
+    ELSE (SELECT COUNT(*) FROM comments WHERE post_id = p.id AND created_at > pv.last_viewed_at)
+  END AS new_comment_count,
+  COALESCE(ca.latest_comment_at, p.created_at) AS latest_activity
+FROM posts p
+${COMMENT_AGG}
+JOIN feeds f ON p.feed_id = f.id
+LEFT JOIN post_views pv ON p.id = pv.post_id`;
+
+const UNREAD_WHERE = `(pv.post_id IS NULL OR ca.latest_comment_at > pv.last_viewed_at)`;
 
 // POST /api/feeds/:feedId/posts
 posts.post("/feeds/:feedId/posts", createRateLimit, async (c) => {
@@ -168,6 +201,70 @@ posts.delete("/posts/:id", (c) => {
   );
 
   db.query("DELETE FROM posts WHERE id = ?").run(id);
+
+  return c.json({ ok: true });
+});
+
+// POST /api/posts/:id/view — mark post as read
+posts.post("/posts/:id/view", (c) => {
+  const { id } = c.req.param();
+  const db = getDb();
+
+  assertExists(
+    db.query<{ id: string }, [string]>("SELECT id FROM posts WHERE id = ?").get(id),
+    "Post not found"
+  );
+
+  db.query(
+    `INSERT INTO post_views (post_id, last_viewed_at) VALUES (?, strftime('%Y-%m-%d %H:%M:%f', 'now'))
+     ON CONFLICT(post_id) DO UPDATE SET last_viewed_at = strftime('%Y-%m-%d %H:%M:%f', 'now')`
+  ).run(id);
+
+  return c.json({ ok: true });
+});
+
+// GET /api/inbox — unread or all posts with activity info
+posts.get("/inbox", (c) => {
+  const cursor = c.req.query("cursor");
+  const limit = Math.min(Number(c.req.query("limit") ?? 20), 100);
+  const mode = c.req.query("mode") ?? "unread";
+
+  const db = getDb();
+
+  const innerWhere = mode !== "all" ? ` WHERE ${UNREAD_WHERE}` : "";
+  const outerConditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (cursor) {
+    outerConditions.push("sub.latest_activity < ?");
+    params.push(cursor);
+  }
+  params.push(limit + 1);
+
+  const outerWhere = outerConditions.length > 0 ? ` WHERE ${outerConditions.join(" AND ")}` : "";
+
+  const rows = db
+    .query<InboxRow, (string | number)[]>(
+      `SELECT * FROM (${INBOX_SELECT}${innerWhere}) sub${outerWhere} ORDER BY sub.latest_activity DESC LIMIT ?`
+    )
+    .all(...params);
+
+  const hasMore = rows.length > limit;
+  const data = hasMore ? rows.slice(0, limit) : rows;
+  const nextCursor = hasMore ? data[data.length - 1]!.latest_activity : null;
+
+  return c.json({ data, next_cursor: nextCursor, has_more: hasMore });
+});
+
+// POST /api/inbox/mark-all-read
+posts.post("/inbox/mark-all-read", (c) => {
+  const db = getDb();
+
+  db.query(
+    `INSERT INTO post_views (post_id, last_viewed_at)
+     SELECT id, strftime('%Y-%m-%d %H:%M:%f', 'now') FROM posts
+     ON CONFLICT(post_id) DO UPDATE SET last_viewed_at = strftime('%Y-%m-%d %H:%M:%f', 'now')`
+  ).run();
 
   return c.json({ ok: true });
 });

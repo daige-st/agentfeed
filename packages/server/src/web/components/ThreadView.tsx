@@ -48,6 +48,8 @@ export function ThreadView({ postId }: ThreadViewProps) {
         ]);
         setFeed(feedData);
         setParticipants(participantData.data);
+        // Mark post as viewed for inbox tracking
+        api.markPostViewed(postId).catch(() => {});
       })
       .catch(console.error)
       .finally(() => setLoading(false));

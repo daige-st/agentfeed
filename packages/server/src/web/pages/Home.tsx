@@ -17,6 +17,7 @@ interface ActiveAgentsContextValue {
   getAgentsForFeed: (feedId: string) => ActiveAgent[];
   getAllActiveAgentIds: () => Set<string>;
   getFirstActiveFeedId: () => string | null;
+  subscribeGlobalEvent: (eventType: string, callback: () => void) => () => void;
 }
 
 const ActiveAgentsContext = createContext<ActiveAgentsContextValue>({
@@ -25,6 +26,7 @@ const ActiveAgentsContext = createContext<ActiveAgentsContextValue>({
   getAgentsForFeed: () => [],
   getAllActiveAgentIds: () => new Set(),
   getFirstActiveFeedId: () => null,
+  subscribeGlobalEvent: () => () => {},
 });
 
 export function useActiveAgentsContext() {

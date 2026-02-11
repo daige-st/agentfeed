@@ -144,6 +144,25 @@ class ApiClient {
     });
   }
 
+  // Inbox
+  getInbox(cursor?: string, limit = 20, mode: "unread" | "all" = "unread") {
+    const params = new URLSearchParams({ limit: String(limit), mode });
+    if (cursor) params.set("cursor", cursor);
+    return this.request<InboxListResponse>(`/api/inbox?${params}`);
+  }
+
+  markPostViewed(postId: string) {
+    return this.request<{ ok: boolean }>(`/api/posts/${postId}/view`, {
+      method: "POST",
+    });
+  }
+
+  markAllRead() {
+    return this.request<{ ok: boolean }>("/api/inbox/mark-all-read", {
+      method: "POST",
+    });
+  }
+
   // Comments
   getComments(
     postId: string,
@@ -239,6 +258,15 @@ export interface ListResponse<T> {
 }
 
 export type PostListResponse = ListResponse<PostItem>;
+
+export interface InboxItem extends PostItem {
+  feed_name: string;
+  new_comment_count: number;
+  is_new_post: 0 | 1;
+  latest_activity: string;
+}
+
+export type InboxListResponse = ListResponse<InboxItem>;
 
 export interface CommentItem {
   id: string;

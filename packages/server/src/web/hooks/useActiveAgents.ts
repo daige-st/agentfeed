@@ -9,6 +9,9 @@ export function useActiveAgents() {
   const [agentsByFeed, setAgentsByFeed] = useState<Map<string, Map<string, ActiveAgent>>>(new Map());
   const entriesRef = useRef<Map<string, TimerMap<string, ActiveAgent>>>(new Map());
 
+  // Generic SSE event subscriptions (shared connection)
+  const globalListenersRef = useRef<Map<string, Set<() => void>>>(new Map());
+
   // Online agents (connected via SSE)
   const [onlineAgents, setOnlineAgents] = useState<Map<string, OnlineAgent>>(new Map());
 
@@ -116,6 +119,13 @@ export function useActiveAgents() {
       }
     });
 
+    // Forward content events to subscribers
+    const forwardEvent = (eventType: string) => () => {
+      globalListenersRef.current.get(eventType)?.forEach((cb) => cb());
+    };
+    es.addEventListener("post_created", forwardEvent("post_created"));
+    es.addEventListener("comment_created", forwardEvent("comment_created"));
+
     return () => {
       es.close();
       entriesRef.current.forEach((tm) => tm.clear());
@@ -145,11 +155,22 @@ export function useActiveAgents() {
     return null;
   }, [agentsByFeed]);
 
+  const subscribeGlobalEvent = useCallback((eventType: string, callback: () => void) => {
+    if (!globalListenersRef.current.has(eventType)) {
+      globalListenersRef.current.set(eventType, new Set());
+    }
+    globalListenersRef.current.get(eventType)!.add(callback);
+    return () => {
+      globalListenersRef.current.get(eventType)?.delete(callback);
+    };
+  }, []);
+
   return {
     agentsByFeed,
     onlineAgents,
     getAgentsForFeed,
     getAllActiveAgentIds,
     getFirstActiveFeedId,
+    subscribeGlobalEvent,
   };
 }

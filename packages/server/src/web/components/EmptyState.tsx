@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
-import { Settings, Bot } from "lucide-react";
-import { api, type FeedItem, type PostItem, type ApiKeyItem } from "../lib/api";
+import { Settings, Bot, CheckCheck, Inbox, Eye } from "lucide-react";
+import { api, type FeedItem, type InboxItem, type ApiKeyItem } from "../lib/api";
 import { PostCard } from "./PostCard";
 import { useActiveAgentsContext } from "../pages/Home";
 import { useFeedStore } from "../store/useFeedStore";
@@ -11,7 +11,7 @@ function AgentList({ keys }: { keys: ApiKeyItem[] }) {
   const selectFeedAndScrollToPost = useFeedStore((s) => s.selectFeedAndScrollToPost);
   const activeIds = getAllActiveAgentIds();
 
-  // Build a map: agentId → { feedId, postId } (for navigation)
+  // Build a map: agentId -> { feedId, postId } (for navigation)
   const agentFeedMap = new Map<string, { feedId: string; postId: string }>();
   for (const [feedId, agents] of agentsByFeed) {
     for (const [agentId, agent] of agents) {
@@ -70,46 +70,97 @@ function AgentList({ keys }: { keys: ApiKeyItem[] }) {
 }
 
 export function EmptyState() {
-  const [feeds, setFeeds] = useState<FeedItem[]>([]);
-  const [recentPosts, setRecentPosts] = useState<PostItem[]>([]);
+  const [items, setItems] = useState<InboxItem[]>([]);
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
+  const [feeds, setFeeds] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [mode, setMode] = useState<"unread" | "all">("unread");
+  const [markingAll, setMarkingAll] = useState(false);
   const navigate = useNavigate();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const { subscribeGlobalEvent } = useActiveAgentsContext();
 
-  useEffect(() => {
-    loadData();
+  const loadInbox = useCallback(async (inboxMode: "unread" | "all") => {
+    try {
+      const res = await api.getInbox(undefined, 20, inboxMode);
+      setItems(res.data);
+      setNextCursor(res.next_cursor);
+      setHasMore(res.has_more);
+    } catch {
+      // ignore
+    }
   }, []);
 
-  const loadData = async () => {
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([api.getKeys(), api.getFeeds(), api.getInbox(undefined, 20, "unread")])
+      .then(([keyList, feedList, inboxData]) => {
+        setKeys(keyList);
+        setFeeds(feedList);
+        setItems(inboxData.data);
+        setNextCursor(inboxData.next_cursor);
+        setHasMore(inboxData.has_more);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // SSE: listen for new posts/comments via shared connection
+  useEffect(() => {
+    const refresh = () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        loadInbox(mode);
+      }, 1000);
+    };
+
+    const unsub1 = subscribeGlobalEvent("post_created", refresh);
+    const unsub2 = subscribeGlobalEvent("comment_created", refresh);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      unsub1();
+      unsub2();
+    };
+  }, [subscribeGlobalEvent, loadInbox, mode]);
+
+  const switchMode = useCallback((newMode: "unread" | "all") => {
+    setMode(newMode);
+    loadInbox(newMode);
+  }, [loadInbox]);
+
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
     try {
-      const [feedList, keyList] = await Promise.all([
-        api.getFeeds(),
-        api.getKeys(),
-      ]);
-      setFeeds(feedList);
-      setKeys(keyList);
-
-      const allPosts: PostItem[] = [];
-      for (const feed of feedList.slice(0, 10)) {
-        try {
-          const { data } = await api.getPosts(feed.id, undefined, 5);
-          allPosts.push(...data);
-        } catch {
-          // skip
-        }
-      }
-
-      allPosts.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-      setRecentPosts(allPosts.slice(0, 20));
+      const res = await api.getInbox(nextCursor, 20, mode);
+      setItems((prev) => [...prev, ...res.data]);
+      setNextCursor(res.next_cursor);
+      setHasMore(res.has_more);
     } catch {
-      // If unauthorized
+      // ignore
     } finally {
-      setLoading(false);
+      setLoadingMore(false);
     }
-  };
+  }, [nextCursor, loadingMore, mode]);
+
+  const handleMarkAllRead = useCallback(async () => {
+    if (markingAll) return;
+    setMarkingAll(true);
+    try {
+      await api.markAllRead();
+      setItems([]);
+      setNextCursor(null);
+      setHasMore(false);
+    } catch {
+      // ignore
+    } finally {
+      setMarkingAll(false);
+    }
+  }, [markingAll]);
 
   if (loading) {
     return (
@@ -122,8 +173,8 @@ export function EmptyState() {
     );
   }
 
-  // No API keys: show welcome + go to settings
-  if (keys.length === 0 && recentPosts.length === 0) {
+  // No API keys and no feeds: show welcome + go to settings
+  if (keys.length === 0 && feeds.length === 0) {
     return (
       <div className="h-full flex flex-col pt-1 md:pt-24">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-text-primary mb-2">
@@ -144,36 +195,112 @@ export function EmptyState() {
     );
   }
 
-  // Has keys but no posts
-  if (recentPosts.length === 0) {
-    return (
-      <div className="h-full flex flex-col pt-1 md:pt-24">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-text-primary mb-2">
-          AgentFeed
-        </h1>
-        <p className="text-base text-gray-500 dark:text-text-secondary leading-relaxed mb-8">
-          Create a feed and start pushing posts via the API.
-        </p>
-        <AgentList keys={keys} />
-      </div>
-    );
-  }
-
-  // Has recent posts
+  // Inbox view
   return (
     <div className="h-full flex flex-col pt-1 md:pt-24">
       <AgentList keys={keys} />
-      <h2 className="text-xs font-semibold text-gray-400 dark:text-text-tertiary uppercase tracking-wider pb-4">
-        Recent Posts
-      </h2>
-      <div className="space-y-4">
-        {recentPosts.map((post) => (
-          <PostCard
-            key={post.id}
-            post={post}
-          />
-        ))}
+
+      {/* Inbox header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Inbox size={16} className="text-gray-400 dark:text-text-tertiary" />
+          <h2 className="text-xs font-semibold text-gray-400 dark:text-text-tertiary uppercase tracking-wider">
+            {mode === "unread" ? "Inbox" : "Recent Activity"}
+          </h2>
+          {mode === "unread" && items.length > 0 && (
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-accent/10 text-accent">
+              {items.length}{hasMore ? "+" : ""}
+            </span>
+          )}
+        </div>
+        {mode === "unread" && items.length > 0 && (
+          <button
+            type="button"
+            onClick={handleMarkAllRead}
+            disabled={markingAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-gray-500 dark:text-text-secondary hover:text-gray-900 dark:hover:text-text-primary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer disabled:opacity-40"
+          >
+            <CheckCheck size={14} />
+            {markingAll ? "Marking..." : "Mark all read"}
+          </button>
+        )}
+        {mode === "all" && (
+          <button
+            type="button"
+            onClick={() => switchMode("unread")}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg text-gray-500 dark:text-text-secondary hover:text-gray-900 dark:hover:text-text-primary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer"
+          >
+            <Inbox size={14} />
+            Back to Inbox
+          </button>
+        )}
       </div>
+
+      {/* Inbox items or empty state */}
+      {items.length === 0 ? (
+        <div className="py-16 flex flex-col items-center text-center">
+          <div className="w-12 h-12 rounded-full bg-gray-100 dark:bg-surface-active flex items-center justify-center mb-4">
+            <CheckCheck size={24} className="text-gray-400 dark:text-text-tertiary" />
+          </div>
+          <p className="text-sm font-medium text-gray-900 dark:text-text-primary mb-1">
+            All caught up
+          </p>
+          <p className="text-sm text-gray-400 dark:text-text-tertiary mb-4">
+            No unread posts or new comments.
+          </p>
+          {mode === "unread" && (
+            <button
+              type="button"
+              onClick={() => switchMode("all")}
+              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-lg text-gray-500 dark:text-text-secondary hover:text-gray-900 dark:hover:text-text-primary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer"
+            >
+              <Eye size={14} />
+              Show recent activity
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {items.map((item) => (
+            <InboxPostCard key={item.id} item={item} />
+          ))}
+
+          {hasMore && (
+            <button
+              onClick={loadMore}
+              disabled={loadingMore}
+              className="w-full py-3 text-sm text-gray-400 dark:text-text-tertiary hover:text-gray-900 dark:hover:text-text-primary transition-colors cursor-pointer rounded-xl hover:bg-interactive-hover"
+            >
+              {loadingMore ? "Loading..." : "Load more"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InboxPostCard({ item }: { item: InboxItem }) {
+  return (
+    <div className="relative">
+      {/* Unread indicator */}
+      {item.is_new_post === 1 && (
+        <div className="absolute left-1 top-8 z-10">
+          <span className="block w-2.5 h-2.5 rounded-full bg-accent" />
+        </div>
+      )}
+      <PostCard
+        post={item}
+        feedName={item.feed_name}
+      />
+      {/* New comments badge */}
+      {item.new_comment_count > 0 && item.is_new_post === 0 && (
+        <div className="absolute right-6 bottom-14 z-10">
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent">
+            {item.new_comment_count} new
+          </span>
+        </div>
+      )}
     </div>
   );
 }
