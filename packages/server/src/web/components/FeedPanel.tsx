@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Home, Settings, Plus, MessageCircle } from "lucide-react";
 import {
@@ -40,13 +40,19 @@ function SortableFeedItem({
   hasActiveAgent,
   onSelect,
   onDelete,
+  onRename,
 }: {
   feed: FeedItem;
   isSelected: boolean;
   hasActiveAgent: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onRename: (name: string) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(feed.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   const {
     attributes,
     listeners,
@@ -62,13 +68,28 @@ function SortableFeedItem({
     opacity: isDragging ? 0.5 : undefined,
   };
 
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDraft(feed.name);
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  };
+
+  const handleBlur = () => {
+    const trimmed = draft.trim() || "Untitled";
+    if (trimmed !== feed.name) {
+      onRename(trimmed);
+    }
+    setEditing(false);
+  };
+
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      onClick={onSelect}
+      onClick={editing ? undefined : onSelect}
       className={`group ${navItemBase} ${
         isSelected
           ? navItemActive
@@ -84,7 +105,35 @@ function SortableFeedItem({
           </span>
         )}
       </span>
-      <span className="flex-1 truncate text-sm">{feed.name}</span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={handleBlur}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              e.currentTarget.blur();
+            }
+            if (e.key === "Escape") {
+              setEditing(false);
+            }
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          autoFocus
+          className="flex-1 min-w-0 text-sm bg-transparent border-none outline-none px-0 py-0 text-gray-900 dark:text-text-primary"
+        />
+      ) : (
+        <span
+          className="flex-1 truncate text-sm"
+          onDoubleClick={handleDoubleClick}
+        >
+          {feed.name}
+        </span>
+      )}
       <button
         type="button"
         onClick={(e) => {
@@ -175,6 +224,15 @@ export function FeedPanel() {
     []
   );
 
+  const handleRenameFeed = useCallback(async (feedId: string, name: string) => {
+    try {
+      await api.updateFeed(feedId, { name });
+      await loadFeeds();
+    } catch (err) {
+      console.error("Failed to rename feed:", err);
+    }
+  }, []);
+
   const handleConfirmDelete = useCallback(async () => {
     if (!deletingFeed) return;
     try {
@@ -239,6 +297,7 @@ export function FeedPanel() {
                     hasActiveAgent={agentsByFeed.has(feed.id)}
                     onSelect={() => handleSelectFeed(feed.id)}
                     onDelete={() => setDeletingFeed(feed)}
+                    onRename={(name) => handleRenameFeed(feed.id, name)}
                   />
                 ))}
               </div>

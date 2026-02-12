@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowLeft, Bot, User, MessageCircle, Copy, Check, Pencil, Trash2, Send, Loader2 } from "lucide-react";
+import { ArrowLeft, Bot, User, MessageCircle, Copy, Check, Pencil, Trash2, Send, Loader2, Paperclip } from "lucide-react";
 import { AgentChip } from "./AgentChip";
 import { useNavigate, useLocation } from "react-router";
 import { Markdown } from "./Markdown";
@@ -10,7 +10,9 @@ import { api } from "../lib/api";
 import type { PostItem, CommentItem, FeedItem, FeedParticipant } from "../lib/api";
 import { autoResize, formatTimeAgo } from "../lib/utils";
 import { useMention } from "../hooks/useMention";
+import { useFileUpload } from "../hooks/useFileUpload";
 import { useFeedSSE } from "../hooks/useFeedSSE";
+import { useFeedStore } from "../store/useFeedStore";
 import { useActiveAgentsContext } from "../pages/Home";
 
 interface ThreadViewProps {
@@ -35,6 +37,7 @@ export function ThreadView({ postId }: ThreadViewProps) {
   const [editContent, setEditContent] = useState("");
   const [editSaving, setEditSaving] = useState(false);
   const commentsEndRef = useRef<HTMLDivElement>(null);
+  const invalidateFeedList = useFeedStore((s) => s.invalidateFeedList);
 
   useEffect(() => {
     setLoading(true);
@@ -131,6 +134,20 @@ export function ThreadView({ postId }: ThreadViewProps) {
     setEditing(true);
   }, [post?.content]);
 
+  const handleUpdateFeedName = useCallback(
+    async (name: string) => {
+      if (!feed) return;
+      try {
+        const updated = await api.updateFeed(feed.id, { name });
+        setFeed(updated);
+        invalidateFeedList();
+      } catch (err) {
+        console.error("Failed to update feed:", err);
+      }
+    },
+    [feed, invalidateFeedList]
+  );
+
   const handleEditSave = useCallback(async () => {
     const content = editContent.trim();
     if (!content || editSaving) return;
@@ -178,9 +195,7 @@ export function ThreadView({ postId }: ThreadViewProps) {
       {/* Feed name + agent list */}
       {feed && (
         <div className="mb-6">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-text-primary mb-2">
-            {feed.name}
-          </h2>
+          <EditableFeedName value={feed.name} onSave={handleUpdateFeedName} />
           {participants.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
               {participants.map((agent) => {
@@ -369,6 +384,20 @@ function TopLevelReplyForm({ postId, onCreated, onCancel }: TopLevelReplyFormPro
     onChange: setContent,
   });
 
+  const {
+    uploading,
+    fileInputRef,
+    handleFileSelect,
+    handlePaste,
+    handleDragOver,
+    handleDrop,
+    openFilePicker,
+  } = useFileUpload({
+    textareaRef: inputRef,
+    value: content,
+    onChange: setContent,
+  });
+
   const handleSubmit = useCallback(async () => {
     const text = content.trim();
     if (!text || submitting) return;
@@ -412,7 +441,7 @@ function TopLevelReplyForm({ postId, onCreated, onCancel }: TopLevelReplyFormPro
   );
 
   return (
-    <div className="mt-3 mb-4 relative">
+    <div className="mt-3 mb-4 relative" onDragOver={handleDragOver} onDrop={handleDrop}>
       <MentionPopup
         mentionQuery={mentionQuery}
         filteredMentions={filteredMentions}
@@ -428,15 +457,31 @@ function TopLevelReplyForm({ postId, onCreated, onCancel }: TopLevelReplyFormPro
           value={content}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder="댓글 남기기..."
           rows={1}
           autoFocus
           className="flex-1 min-h-9 max-h-40 px-0 py-2 text-sm bg-transparent text-gray-900 dark:text-text-primary placeholder:text-gray-400 dark:placeholder:text-text-tertiary focus:outline-none resize-none overflow-hidden"
         />
+        <input
+          ref={fileInputRef}
+          type="file"
+          onChange={handleFileSelect}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={openFilePicker}
+          disabled={uploading}
+          className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg text-gray-400 dark:text-text-tertiary hover:text-gray-600 dark:hover:text-text-primary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer disabled:opacity-40"
+          title="Attach file"
+        >
+          {uploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
+        </button>
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={!content.trim() || submitting}
+          disabled={!content.trim() || submitting || uploading}
           className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
         >
           {submitting ? (
@@ -447,6 +492,48 @@ function TopLevelReplyForm({ postId, onCreated, onCancel }: TopLevelReplyFormPro
         </button>
       </div>
     </div>
+  );
+}
+
+function EditableFeedName({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const handleBlur = () => {
+    const trimmed = draft.trim() || "Untitled";
+    if (trimmed !== value) {
+      onSave(trimmed);
+    } else {
+      setDraft(value);
+    }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={handleBlur}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          e.currentTarget.blur();
+        }
+      }}
+      className="w-full text-lg font-bold border-none outline-none bg-transparent px-0 py-0 mb-2 placeholder:text-gray-400 dark:placeholder:text-text-tertiary text-gray-900 dark:text-text-primary"
+      placeholder="Untitled"
+    />
   );
 }
 
