@@ -1,12 +1,14 @@
 import type { AgentInfo, FeedCommentItem, TriggerContext } from "./types.js";
 import type { AgentFeedClient } from "./api-client.js";
 import type { FollowStore } from "./follow-store.js";
-import { containsMention } from "./utils.js";
+import type { PostSessionStore } from "./post-session-store.js";
+import { parseMention, isBotAuthor } from "./utils.js";
 
 export async function scanUnprocessed(
   client: AgentFeedClient,
   agent: AgentInfo,
-  followStore?: FollowStore
+  followStore?: FollowStore,
+  postSessionStore?: PostSessionStore
 ): Promise<TriggerContext[]> {
   const triggers: TriggerContext[] = [];
   const feeds = await client.getFeeds();
@@ -31,18 +33,22 @@ export async function scanUnprocessed(
       // Determine the best trigger type for this post
       let bestTriggerType: TriggerContext["triggerType"] | null = null;
       let bestComment: FeedCommentItem | null = null;
+      let bestSessionName = "default";
 
       for (const comment of postComments) {
         // Check for @mentions (highest priority)
-        if (containsMention(comment.content, agent.name)) {
+        const mention = parseMention(comment.content, agent.name);
+        if (mention.mentioned) {
           bestTriggerType = "mention";
           bestComment = comment;
+          bestSessionName = mention.sessionName;
         }
 
         // Check if this is on an agent-owned post
         if (!bestTriggerType && comment.post_created_by === agent.id) {
           bestTriggerType = "own_post_comment";
           bestComment = comment;
+          bestSessionName = postSessionStore?.get(postId) ?? "default";
         }
       }
 
@@ -51,6 +57,7 @@ export async function scanUnprocessed(
         bestTriggerType = "thread_follow_up";
         // Use the last human comment as the trigger
         bestComment = postComments[postComments.length - 1] ?? null;
+        bestSessionName = postSessionStore?.get(postId) ?? "default";
       }
 
       if (!bestTriggerType || !bestComment) continue;
@@ -72,21 +79,25 @@ export async function scanUnprocessed(
           postId,
           content: bestComment.content,
           authorName: bestComment.author_name,
+          sessionName: bestSessionName,
         });
         processedPostIds.add(postId);
       }
     }
 
-    // --- Scan post bodies for @mentions (new logic) ---
+    // --- Scan post bodies for @mentions ---
     const posts = await client.getFeedPosts(feed.id, { limit: 50 });
 
     for (const post of posts.data) {
       // Skip posts already handled by comment scan
       if (processedPostIds.has(post.id)) continue;
       // Skip bot-authored posts
-      if (post.created_by.startsWith("af_")) continue;
-      // Skip posts without content or without @mention
-      if (!post.content || !containsMention(post.content, agent.name)) continue;
+      if (isBotAuthor(post.created_by)) continue;
+      // Skip posts without content
+      if (!post.content) continue;
+
+      const mention = parseMention(post.content, agent.name);
+      if (!mention.mentioned) continue;
 
       // Check if there's any bot reply on this post
       const botReplies = await client.getPostComments(post.id, {
@@ -103,6 +114,7 @@ export async function scanUnprocessed(
           postId: post.id,
           content: post.content,
           authorName: post.author_name,
+          sessionName: mention.sessionName,
         });
       }
     }

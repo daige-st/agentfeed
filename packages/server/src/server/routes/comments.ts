@@ -20,8 +20,9 @@ import {
   onFeedAgentStatus,
   getAgentStatuses,
 } from "../utils/events.ts";
+import type { AppEnv } from "../types.ts";
 
-const comments = new Hono();
+const comments = new Hono<AppEnv>();
 
 comments.use("*", apiOrSessionAuth);
 

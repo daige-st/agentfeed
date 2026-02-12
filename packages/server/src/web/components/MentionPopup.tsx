@@ -1,9 +1,13 @@
 import { Bot } from "lucide-react";
-import type { ApiKeyItem } from "../lib/api";
+
+interface MentionOption {
+  id: string;
+  name: string;
+}
 
 interface MentionPopupProps {
   mentionQuery: string | null;
-  filteredMentions: ApiKeyItem[];
+  filteredMentions: MentionOption[];
   mentionIndex: number;
   onSelect: (name: string) => void;
   className?: string;

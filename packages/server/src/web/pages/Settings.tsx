@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
-import { KeyRound, Trash2, ChevronLeft, Plus, LogOut, Loader2 } from "lucide-react";
+import { KeyRound, Trash2, ChevronLeft, Plus, LogOut, Loader2, Bot, MessageSquare } from "lucide-react";
 import { MdContentCopy, MdCheck } from "react-icons/md";
-import { api, type ApiKeyItem } from "../lib/api";
+import { api, type ApiKeyItem, type AgentItem, type AgentSessionItem } from "../lib/api";
 import { Modal, ModalHeader } from "../components/Modal";
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
+  const [agents, setAgents] = useState<AgentItem[]>([]);
+  const [sessions, setSessions] = useState<AgentSessionItem[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createdKey, setCreatedKey] = useState<{ name: string; key: string } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -23,9 +25,29 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
     }
   }, []);
 
+  const loadAgents = useCallback(async () => {
+    try {
+      const res = await api.getAgents();
+      setAgents(res.data);
+    } catch {
+      // unauthorized
+    }
+  }, []);
+
+  const loadSessions = useCallback(async () => {
+    try {
+      const res = await api.getAgentSessions();
+      setSessions(res.data);
+    } catch {
+      // unauthorized
+    }
+  }, []);
+
   useEffect(() => {
     loadKeys();
-  }, [loadKeys]);
+    loadAgents();
+    loadSessions();
+  }, [loadKeys, loadAgents, loadSessions]);
 
   const handleCreated = (name: string, key: string) => {
     setShowCreateModal(false);
@@ -37,10 +59,41 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
     try {
       await api.deleteKey(id);
       loadKeys();
+      loadAgents(); // agents may cascade-delete with key
+      loadSessions(); // sessions cascade-delete with agent
     } catch (err) {
       console.error(err);
     }
   };
+
+  const handleDeleteAgent = async (id: string) => {
+    try {
+      await api.deleteAgent(id);
+      loadAgents();
+      loadSessions();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteSession = async (agentId: string, sessionName: string) => {
+    try {
+      await api.deleteAgentSession(agentId, sessionName);
+      loadSessions();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Group sessions by agent_id
+  const sessionsByAgent = useMemo(() =>
+    sessions.reduce<Record<string, AgentSessionItem[]>>((acc, s) => {
+      if (!acc[s.agent_id]) acc[s.agent_id] = [];
+      acc[s.agent_id]!.push(s);
+      return acc;
+    }, {}),
+    [sessions]
+  );
 
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -165,6 +218,76 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
             </a>
           </div>
         </div>
+
+        {/* Registered Agents */}
+        {agents.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <h2 className="text-sm font-medium text-gray-500 dark:text-text-secondary">
+              Registered Agents
+            </h2>
+            <div className="rounded-xl border border-gray-200 dark:border-border-default bg-surface">
+              {agents.map((agent) => {
+                const agentSessions = sessionsByAgent[agent.id] ?? [];
+                return (
+                  <div
+                    key={agent.id}
+                    className="border-b border-gray-100 dark:border-border-default last:border-b-0"
+                  >
+                    <div className="flex items-center justify-between p-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex-shrink-0">
+                          <Bot className="w-5 h-5 text-gray-900 dark:text-text-primary" />
+                        </div>
+                        <div className="min-w-0">
+                          <span className="text-sm font-medium text-gray-900 dark:text-text-primary block truncate">
+                            {agent.name}
+                          </span>
+                          <div className="text-xs text-gray-400 dark:text-text-secondary">
+                            Key: {agent.key_name}
+                            <span className="font-sans"> · </span>
+                            {new Date(agent.created_at + "Z").toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteAgent(agent.id)}
+                        className="flex-shrink-0 ml-2 p-1.5 text-gray-400 dark:text-text-tertiary hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {agentSessions.length > 0 && (
+                      <div className="pl-11 pr-3 pb-3">
+                        {agentSessions.map((session) => (
+                          <div
+                            key={session.session_name}
+                            className="flex items-center justify-between py-1.5"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <MessageSquare className="w-3.5 h-3.5 text-gray-400 dark:text-text-tertiary flex-shrink-0" />
+                              <span className="text-xs font-mono text-gray-600 dark:text-text-secondary truncate">
+                                {session.session_name}
+                              </span>
+                              <span className="text-[10px] text-gray-400 dark:text-text-tertiary whitespace-nowrap">
+                                {new Date(session.last_used_at + "Z").toLocaleDateString()}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteSession(agent.id, session.session_name)}
+                              className="flex-shrink-0 ml-2 p-1 text-gray-300 dark:text-text-tertiary hover:text-red-500 dark:hover:text-red-400 rounded transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Logout */}
         <button

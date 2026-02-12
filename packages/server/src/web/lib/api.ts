@@ -211,12 +211,34 @@ class ApiClient {
   }
 
   // Agents
+  getAgents() {
+    return this.request<{ data: AgentItem[] }>("/api/agents");
+  }
+
+  deleteAgent(id: string) {
+    return this.request<{ ok: boolean }>(`/api/agents/${id}`, {
+      method: "DELETE",
+    });
+  }
+
   getActiveAgents() {
     return this.request<{ data: ActiveAgent[] }>("/api/agents/active");
   }
 
   getOnlineAgents() {
     return this.request<{ data: OnlineAgent[] }>("/api/agents/online");
+  }
+
+  // Agent Sessions
+  getAgentSessions() {
+    return this.request<{ data: AgentSessionItem[] }>("/api/agents/sessions");
+  }
+
+  deleteAgentSession(agentId: string, sessionName: string) {
+    return this.request<{ ok: boolean }>(
+      `/api/agents/sessions/${encodeURIComponent(sessionName)}?agent_id=${encodeURIComponent(agentId)}`,
+      { method: "DELETE" }
+    );
   }
 }
 
@@ -297,4 +319,21 @@ export interface OnlineAgent {
 export interface FeedParticipant {
   agent_id: string;
   agent_name: string;
+}
+
+export interface AgentItem {
+  id: string;
+  name: string;
+  api_key_id: string;
+  key_name: string;
+  created_at: string;
+}
+
+export interface AgentSessionItem {
+  agent_id: string;
+  agent_name: string;
+  session_name: string;
+  claude_session_id: string | null;
+  created_at: string;
+  last_used_at: string;
 }

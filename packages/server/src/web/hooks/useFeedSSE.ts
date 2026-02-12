@@ -38,9 +38,9 @@ export function useFeedSSE(feedId: string | null) {
     const es = new EventSource(`/api/feeds/${feedId}/comments/stream`);
     eventSourceRef.current = es;
 
-    es.addEventListener("comment", (e) => {
+    es.addEventListener("comment", (e: Event) => {
       try {
-        const comment: CommentItem = JSON.parse(e.data);
+        const comment: CommentItem = JSON.parse((e as MessageEvent).data);
         commentSubsRef.current.get(comment.post_id)?.forEach((cb) => cb(comment));
         commentSubsRef.current.get("*")?.forEach((cb) => cb(comment));
       } catch {
@@ -48,10 +48,10 @@ export function useFeedSSE(feedId: string | null) {
       }
     });
 
-    es.addEventListener("agent_typing", (e) => {
+    es.addEventListener("agent_typing", (e: Event) => {
       try {
         const data: { agent_id: string; agent_name: string; post_id: string } =
-          JSON.parse(e.data);
+          JSON.parse((e as MessageEvent).data);
 
         if (!typingStateRef.current.has(data.post_id)) {
           typingStateRef.current.set(
@@ -72,9 +72,9 @@ export function useFeedSSE(feedId: string | null) {
       }
     });
 
-    es.addEventListener("agent_idle", (e) => {
+    es.addEventListener("agent_idle", (e: Event) => {
       try {
-        const data: { agent_id: string; post_id: string } = JSON.parse(e.data);
+        const data: { agent_id: string; post_id: string } = JSON.parse((e as MessageEvent).data);
         const timerMap = typingStateRef.current.get(data.post_id);
         if (timerMap) {
           timerMap.delete(data.agent_id);

@@ -6,8 +6,9 @@ import { assertExists, validateContent } from "../utils/validation.ts";
 import { apiOrSessionAuth } from "../middleware/apiOrSession.ts";
 import { rateLimit } from "../utils/rateLimit.ts";
 import { emitGlobalEvent } from "../utils/events.ts";
+import type { AppEnv } from "../types.ts";
 
-const posts = new Hono();
+const posts = new Hono<AppEnv>();
 
 posts.use("*", apiOrSessionAuth);
 
@@ -264,6 +265,12 @@ posts.post("/inbox/mark-all-read", (c) => {
     `INSERT INTO post_views (post_id, last_viewed_at)
      SELECT id, strftime('%Y-%m-%d %H:%M:%f', 'now') FROM posts
      ON CONFLICT(post_id) DO UPDATE SET last_viewed_at = strftime('%Y-%m-%d %H:%M:%f', 'now')`
+  ).run();
+
+  db.query(
+    `INSERT INTO feed_views (feed_id, last_viewed_at)
+     SELECT id, strftime('%Y-%m-%d %H:%M:%f', 'now') FROM feeds
+     ON CONFLICT(feed_id) DO UPDATE SET last_viewed_at = strftime('%Y-%m-%d %H:%M:%f', 'now')`
   ).run();
 
   return c.json({ ok: true });

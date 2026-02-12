@@ -1,16 +1,17 @@
 import { spawn } from "node:child_process";
 import type { TriggerContext, AgentInfo, PermissionMode } from "./types.js";
+import { generateMCPConfig, writeMCPConfig } from "./mcp-config.js";
 
 interface InvokeOptions {
   agent: AgentInfo;
   trigger: TriggerContext;
-  skillMd: string;
   apiKey: string;
   serverUrl: string;
   recentContext: string;
   permissionMode: PermissionMode;
   extraAllowedTools?: string[];
   sessionId?: string;
+  agentId?: string;
 }
 
 interface InvokeResult {
@@ -45,16 +46,25 @@ export function invokeAgent(options: InvokeOptions): Promise<InvokeResult> {
     const isNewSession = !options.sessionId;
     const systemPrompt = buildSystemPrompt(options);
 
+    // Generate MCP config
+    const mcpConfig = generateMCPConfig({
+      AGENTFEED_BASE_URL: `${options.serverUrl}/api`,
+      AGENTFEED_API_KEY: options.apiKey,
+      ...(options.agentId ? { AGENTFEED_AGENT_ID: options.agentId } : {}),
+    });
+    const mcpConfigPath = writeMCPConfig(mcpConfig);
+
     const args = [
       "-p", prompt,
       "--append-system-prompt", systemPrompt,
+      "--mcp-config", mcpConfigPath,
     ];
 
     if (options.permissionMode === "yolo") {
       args.push("--dangerously-skip-permissions");
     } else {
-      // Safe mode: allow curl for API calls + user-specified tools
-      const allowedTools = ["Bash(curl *)", ...(options.extraAllowedTools ?? [])];
+      // Safe mode: MCP tools + user-specified tools
+      const allowedTools = ["mcp__agentfeed__*", ...(options.extraAllowedTools ?? [])];
       for (const tool of allowedTools) {
         args.push("--allowedTools", tool);
       }
@@ -71,6 +81,7 @@ export function invokeAgent(options: InvokeOptions): Promise<InvokeResult> {
     const env: Record<string, string> = {
       AGENTFEED_BASE_URL: `${options.serverUrl}/api`,
       AGENTFEED_API_KEY: options.apiKey,
+      ...(options.agentId ? { AGENTFEED_AGENT_ID: options.agentId } : {}),
       CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE ?? "50",
       PATH: process.env.PATH ?? "",
       HOME: process.env.HOME ?? "",
@@ -178,11 +189,26 @@ function getTriggerLabel(triggerType: string): string {
 }
 
 function buildSystemPrompt(options: InvokeOptions): string {
+  const agentfeedGuidance = `# AgentFeed
+
+You have access to AgentFeed MCP tools for posting and reading feed content.
+
+Available tools:
+- agentfeed_get_feeds - List all feeds
+- agentfeed_get_posts - Get posts from a feed
+- agentfeed_get_post - Get a single post by ID
+- agentfeed_create_post - Create a new post in a feed
+- agentfeed_get_comments - Get comments on a post (use since/author_type filters)
+- agentfeed_post_comment - Post a comment (Korean and emoji supported!)
+- agentfeed_set_status - Report thinking/idle status
+
+Use these tools to interact with the feed. All content encoding is handled automatically.`;
+
   if (options.permissionMode === "yolo") {
-    return options.skillMd;
+    return agentfeedGuidance;
   }
 
-  return `${SECURITY_POLICY}\n\n${options.skillMd}`;
+  return `${SECURITY_POLICY}\n\n${agentfeedGuidance}`;
 }
 
 function wrapUntrusted(text: string): string {
@@ -206,13 +232,18 @@ function buildPrompt(options: InvokeOptions): string {
     ? `\n\nThis is a follow-up comment in a thread you previously participated in. Read the context carefully and decide whether a response is needed. Respond if the comment is directed at you, asks a question, gives feedback, or warrants acknowledgment. If the comment doesn't need a response from you (e.g., the user is talking to someone else), you may skip responding.`
     : "";
 
+  const sessionInfo = trigger.sessionName !== "default"
+    ? `\n- Session: ${trigger.sessionName}`
+    : "";
+
   return `You are ${agent.name}.
 
 [Trigger]
 - Type: ${triggerLabel}
 - Author: ${trigger.authorName ?? "unknown"}
 - Feed: ${trigger.feedName || trigger.feedId}
-- Post ID: ${trigger.postId}- Content: ${isSafe ? "\n" : ""}${content}
+- Post ID: ${trigger.postId}${sessionInfo}
+- Content: ${isSafe ? "\n" : ""}${content}
 
 [Recent Context]
 ${context}

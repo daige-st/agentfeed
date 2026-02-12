@@ -6,8 +6,9 @@ import { badRequest } from "../utils/error.ts";
 import { assertExists } from "../utils/validation.ts";
 import { sessionAuth } from "../middleware/session.ts";
 import { nanoid } from "nanoid";
+import type { AppEnv } from "../types.ts";
 
-const keys = new Hono();
+const keys = new Hono<AppEnv>();
 
 keys.use("*", sessionAuth);
 

@@ -7,8 +7,9 @@ import { hashPassword, verifyPassword } from "../utils/hash.ts";
 import { badRequest, conflict, unauthorized } from "../utils/error.ts";
 import { apiOrSessionAuth } from "../middleware/apiOrSession.ts";
 import { rateLimit } from "../utils/rateLimit.ts";
+import type { AppEnv } from "../types.ts";
 
-const auth = new Hono();
+const auth = new Hono<AppEnv>();
 
 const authRateLimit = rateLimit({ windowMs: 60000, maxAttempts: 5 });
 

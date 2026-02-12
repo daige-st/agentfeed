@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import * as readline from "node:readline";
 import { AgentFeedClient } from "./api-client.js";
 import { connectSSE } from "./sse-client.js";
@@ -7,6 +8,7 @@ import { scanUnprocessed } from "./scanner.js";
 import { SessionStore } from "./session-store.js";
 import { FollowStore } from "./follow-store.js";
 import { QueueStore } from "./queue-store.js";
+import { PostSessionStore } from "./post-session-store.js";
 import type { AgentInfo, GlobalEvent, TriggerContext, PermissionMode } from "./types.js";
 
 const MAX_WAKE_ATTEMPTS = 3;
@@ -76,6 +78,7 @@ const wakeAttempts = new Map<string, number>();
 const sessionStore = new SessionStore(process.env.AGENTFEED_SESSION_FILE);
 const followStore = new FollowStore(process.env.AGENTFEED_FOLLOW_FILE);
 const queueStore = new QueueStore(process.env.AGENTFEED_QUEUE_FILE);
+const postSessionStore = new PostSessionStore(process.env.AGENTFEED_POST_SESSION_FILE);
 
 function shutdown() {
   console.log("\nShutting down...");
@@ -101,19 +104,19 @@ async function main(): Promise<void> {
     : "";
   console.log(`AgentFeed Worker starting... (permission: ${permissionMode}${toolsInfo})`);
 
-  // Step 0: Initialize
-  const agent = await client.getMe();
+  // Step 0: Register agent
+  const projectName = process.env.AGENTFEED_AGENT_NAME ?? path.basename(process.cwd());
+  const agent = await client.register(projectName);
   console.log(`Agent: ${agent.name} (${agent.id})`);
 
-  const skillMd = await client.getSkillMd();
-  console.log("Skill document cached.");
+  console.log("MCP mode enabled.");
 
   // Step 1: Startup scan for unprocessed items
   console.log("Scanning for unprocessed items...");
-  const unprocessed = await scanUnprocessed(client, agent, followStore);
+  const unprocessed = await scanUnprocessed(client, agent, followStore, postSessionStore);
   if (unprocessed.length > 0) {
     console.log(`Found ${unprocessed.length} unprocessed item(s)`);
-    await handleTriggers(unprocessed, agent, skillMd);
+    await handleTriggers(unprocessed, agent);
   } else {
     console.log("No unprocessed items found.");
   }
@@ -122,14 +125,29 @@ async function main(): Promise<void> {
   const sseUrl = `${serverUrl}/api/events/stream?author_type=human`;
   console.log("Connecting to global event stream...");
 
-  sseConnection = connectSSE(sseUrl, apiKey, (rawEvent) => {
+  sseConnection = connectSSE(sseUrl, apiKey, client.agentId, (rawEvent) => {
     if (rawEvent.type === "heartbeat") return;
+
+    // Handle session_deleted events directly
+    if (rawEvent.type === "session_deleted") {
+      try {
+        const data = JSON.parse(rawEvent.data) as { agent_id: string; session_name: string };
+        if (data.agent_id === client.agentId) {
+          sessionStore.delete(data.session_name);
+          postSessionStore.removeBySessionName(data.session_name);
+          console.log(`Session deleted: ${data.session_name}`);
+        }
+      } catch (err) {
+        console.error("Failed to handle session_deleted event:", err);
+      }
+      return;
+    }
 
     try {
       const event: GlobalEvent = JSON.parse(rawEvent.data);
-      const trigger = detectTrigger(event, agent, followStore);
+      const trigger = detectTrigger(event, agent, followStore, postSessionStore);
       if (trigger) {
-        handleTriggers([trigger], agent, skillMd);
+        handleTriggers([trigger], agent);
       }
     } catch (err) {
       console.error("Failed to parse event:", err);
@@ -143,8 +161,7 @@ async function main(): Promise<void> {
 
 async function handleTriggers(
   triggers: TriggerContext[],
-  agent: AgentInfo,
-  skillMd: string
+  agent: AgentInfo
 ): Promise<void> {
   // Queue all incoming triggers (persisted to disk)
   for (const t of triggers) {
@@ -155,12 +172,11 @@ async function handleTriggers(
   if (isRunning) return;
 
   // Process queue until empty
-  await processQueue(agent, skillMd);
+  await processQueue(agent);
 }
 
 async function processQueue(
-  agent: AgentInfo,
-  skillMd: string
+  agent: AgentInfo
 ): Promise<void> {
   while (true) {
     const queued = queueStore.drain();
@@ -197,7 +213,7 @@ async function processQueue(
     // Fetch recent context for the prompt
     const recentContext = await fetchContext(trigger);
 
-    console.log(`Waking agent for: ${trigger.triggerType} on ${trigger.postId}`);
+    console.log(`Waking agent for: ${trigger.triggerType} on ${trigger.postId} (session: ${trigger.sessionName})`);
 
     // Report thinking status
     await client.setAgentStatus({
@@ -214,17 +230,22 @@ async function processQueue(
           const result = await invokeAgent({
             agent,
             trigger,
-            skillMd,
             apiKey,
             serverUrl,
             recentContext,
             permissionMode,
             extraAllowedTools,
-            sessionId: sessionStore.get(trigger.postId),
+            sessionId: sessionStore.get(trigger.sessionName),
+            agentId: client.agentId,
           });
 
           if (result.sessionId) {
-            sessionStore.set(trigger.postId, result.sessionId);
+            sessionStore.set(trigger.sessionName, result.sessionId);
+            postSessionStore.set(trigger.postId, trigger.sessionName);
+            // Report session to server
+            await client.reportSession(trigger.sessionName, result.sessionId).catch((err) => {
+              console.warn("Failed to report session:", err);
+            });
           }
 
           if (result.exitCode === 0) {
@@ -233,9 +254,9 @@ async function processQueue(
           }
 
           // If resume failed (stale session), clear it and retry as new session
-          if (result.exitCode !== 0 && sessionStore.get(trigger.postId)) {
+          if (result.exitCode !== 0 && sessionStore.get(trigger.sessionName)) {
             console.log("Session may be stale, clearing and retrying as new session...");
-            sessionStore.delete(trigger.postId);
+            sessionStore.delete(trigger.sessionName);
           }
 
           console.error(`Agent exited with code ${result.exitCode}, retry ${retries + 1}/${MAX_CRASH_RETRIES}`);
@@ -261,8 +282,7 @@ async function processQueue(
 
     // Post-completion: re-scan for items that arrived during execution and add to queue
     try {
-      const agent2 = await client.getMe();
-      const newUnprocessed = await scanUnprocessed(client, agent2, followStore);
+      const newUnprocessed = await scanUnprocessed(client, agent, followStore, postSessionStore);
       for (const t of newUnprocessed) {
         queueStore.push(t);
       }

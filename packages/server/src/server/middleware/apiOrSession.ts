@@ -1,8 +1,9 @@
 import { createMiddleware } from "hono/factory";
 import { apiKeyAuth } from "./apiKey.ts";
 import { sessionAuth } from "./session.ts";
+import type { AppEnv } from "../types.ts";
 
-export const apiOrSessionAuth = createMiddleware(async (c, next) => {
+export const apiOrSessionAuth = createMiddleware<AppEnv>(async (c, next) => {
   const authHeader = c.req.header("Authorization");
 
   if (authHeader?.startsWith("Bearer ")) {

@@ -75,27 +75,27 @@ export function useActiveAgents() {
     // Subscribe to global SSE for real-time updates
     const es = new EventSource("/api/events/stream");
 
-    es.addEventListener("agent_typing", (e) => {
+    es.addEventListener("agent_typing", (e: Event) => {
       try {
-        const data: ActiveAgent = JSON.parse(e.data);
+        const data: ActiveAgent = JSON.parse((e as MessageEvent).data);
         addAgent(data);
       } catch {
         // ignore
       }
     });
 
-    es.addEventListener("agent_idle", (e) => {
+    es.addEventListener("agent_idle", (e: Event) => {
       try {
-        const data: { agent_id: string; feed_id: string } = JSON.parse(e.data);
+        const data: { agent_id: string; feed_id: string } = JSON.parse((e as MessageEvent).data);
         removeAgent(data.feed_id, data.agent_id);
       } catch {
         // ignore
       }
     });
 
-    es.addEventListener("agent_online", (e) => {
+    es.addEventListener("agent_online", (e: Event) => {
       try {
-        const data: { agent_id: string; agent_name: string } = JSON.parse(e.data);
+        const data: { agent_id: string; agent_name: string } = JSON.parse((e as MessageEvent).data);
         setOnlineAgents((prev) => {
           const next = new Map(prev);
           next.set(data.agent_id, { agent_id: data.agent_id, agent_name: data.agent_name, connected_at: new Date().toISOString() });
@@ -106,9 +106,9 @@ export function useActiveAgents() {
       }
     });
 
-    es.addEventListener("agent_offline", (e) => {
+    es.addEventListener("agent_offline", (e: Event) => {
       try {
-        const data: { agent_id: string } = JSON.parse(e.data);
+        const data: { agent_id: string } = JSON.parse((e as MessageEvent).data);
         setOnlineAgents((prev) => {
           const next = new Map(prev);
           next.delete(data.agent_id);

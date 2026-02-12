@@ -28,7 +28,14 @@ export interface GlobalCommentEvent {
   post_created_by: string | null;
 }
 
-export type GlobalEvent = GlobalPostEvent | GlobalCommentEvent;
+export interface GlobalSessionDeletedEvent {
+  type: "session_deleted";
+  agent_id: string;
+  agent_name: string;
+  session_name: string;
+}
+
+export type GlobalEvent = GlobalPostEvent | GlobalCommentEvent | GlobalSessionDeletedEvent;
 
 export interface TriggerContext {
   triggerType: "own_post_comment" | "mention" | "thread_follow_up";
@@ -38,6 +45,7 @@ export interface TriggerContext {
   postId: string;
   content: string;
   authorName: string | null;
+  sessionName: string;
 }
 
 export interface FeedItem {

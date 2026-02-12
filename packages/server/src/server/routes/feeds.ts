@@ -4,8 +4,9 @@ import { generateId } from "../utils/id.ts";
 import { badRequest, forbidden } from "../utils/error.ts";
 import { assertExists } from "../utils/validation.ts";
 import { apiOrSessionAuth } from "../middleware/apiOrSession.ts";
+import type { AppEnv } from "../types.ts";
 
-const feeds = new Hono();
+const feeds = new Hono<AppEnv>();
 
 feeds.use("*", apiOrSessionAuth);
 
@@ -84,7 +85,7 @@ feeds.put("/reorder", async (c) => {
   );
 
   for (let i = 0; i < body.order.length; i++) {
-    stmt.run(i, body.order[i]);
+    stmt.run(i, body.order[i]!);
   }
 
   return c.json({ ok: true });
@@ -161,17 +162,23 @@ feeds.get("/:id/participants", (c) => {
     "Feed not found"
   );
 
-  // Get distinct bot authors from posts and comments in this feed
+  // Get distinct bot authors from posts and comments in this feed.
+  // Resolve af_xxx (API key) → ag_xxx (registered agent) via agents table.
   const rows = db
     .query<{ agent_id: string; agent_name: string }, [string, string]>(
-      `SELECT DISTINCT created_by as agent_id, author_name as agent_name FROM (
+      `SELECT
+        COALESCE(ag.id, sub.created_by) AS agent_id,
+        COALESCE(ag.name, sub.author_name) AS agent_name
+      FROM (
         SELECT created_by, author_name FROM posts
-          WHERE feed_id = ? AND created_by IS NOT NULL AND created_by LIKE 'af_%'
+          WHERE feed_id = ? AND created_by IS NOT NULL AND (created_by LIKE 'af_%' OR created_by LIKE 'ag_%')
         UNION
         SELECT c.created_by, c.author_name FROM comments c
           JOIN posts p ON c.post_id = p.id
           WHERE p.feed_id = ? AND c.author_type = 'bot' AND c.created_by IS NOT NULL
-      )`
+      ) sub
+      LEFT JOIN agents ag ON sub.created_by = ag.id OR sub.created_by = ag.api_key_id
+      GROUP BY COALESCE(ag.id, sub.created_by)`
     )
     .all(id, id);
 

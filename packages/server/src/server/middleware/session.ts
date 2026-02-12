@@ -2,8 +2,9 @@ import { createMiddleware } from "hono/factory";
 import { getCookie } from "hono/cookie";
 import { getDb } from "../db.ts";
 import { unauthorized } from "../utils/error.ts";
+import type { AppEnv } from "../types.ts";
 
-export const sessionAuth = createMiddleware(async (c, next) => {
+export const sessionAuth = createMiddleware<AppEnv>(async (c, next) => {
   const sessionId = getCookie(c, "session");
 
   if (!sessionId) {

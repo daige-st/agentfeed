@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { api, type ApiKeyItem } from "../lib/api";
+import { api, type AgentItem } from "../lib/api";
 
 interface UseMentionOptions {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -8,25 +8,25 @@ interface UseMentionOptions {
 }
 
 export function useMention({ textareaRef, value, onChange }: UseMentionOptions) {
-  const [mentionKeys, setMentionKeys] = useState<ApiKeyItem[]>([]);
+  const [mentionAgents, setMentionAgents] = useState<AgentItem[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
 
   useEffect(() => {
-    api.getKeys().then(setMentionKeys).catch(() => {});
+    api.getAgents().then((res) => setMentionAgents(res.data)).catch(() => {});
   }, []);
 
   const filteredMentions =
     mentionQuery !== null
-      ? mentionKeys.filter((k) =>
-          k.name.toLowerCase().includes(mentionQuery.toLowerCase())
+      ? mentionAgents.filter((a) =>
+          a.name.toLowerCase().includes(mentionQuery.toLowerCase())
         )
       : [];
 
   const detectMention = useCallback(
     (text: string, cursorPos: number) => {
       const textBeforeCursor = text.slice(0, cursorPos);
-      const match = textBeforeCursor.match(/@(\S*)$/);
+      const match = textBeforeCursor.match(/@([^\s/]*)$/);
 
       if (match) {
         setMentionQuery(match[1] ?? "");
@@ -45,7 +45,7 @@ export function useMention({ textareaRef, value, onChange }: UseMentionOptions) 
 
       const cursorPos = textarea.selectionStart ?? value.length;
       const textBeforeCursor = value.slice(0, cursorPos);
-      const match = textBeforeCursor.match(/@(\S*)$/);
+      const match = textBeforeCursor.match(/@([^\s/]*)$/);
 
       if (match) {
         const start = cursorPos - match[0].length;

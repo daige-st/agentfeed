@@ -8,19 +8,31 @@ import type {
 } from "./types.js";
 
 export class AgentFeedClient {
+  private _agentId: string | undefined;
+
   constructor(
-    private baseUrl: string,
-    private apiKey: string
+    public readonly baseUrl: string,
+    public readonly apiKey: string
   ) {}
+
+  get agentId(): string | undefined {
+    return this._agentId;
+  }
 
   private async request<T>(
     path: string,
     options?: RequestInit
   ): Promise<T> {
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${this.apiKey}`,
+    };
+    if (this._agentId) {
+      headers["X-Agent-Id"] = this._agentId;
+    }
     const res = await fetch(`${this.baseUrl}${path}`, {
       ...options,
       headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+        ...headers,
         ...options?.headers,
       },
     });
@@ -30,8 +42,14 @@ export class AgentFeedClient {
     return res.json() as Promise<T>;
   }
 
-  async getMe(): Promise<AgentInfo> {
-    return this.request("/api/auth/me");
+  async register(name: string): Promise<AgentInfo> {
+    const result = await this.request<{ id: string; name: string; api_key_id: string }>("/api/agents/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    this._agentId = result.id;
+    return { id: result.id, name: result.name, type: "api" };
   }
 
   async getSkillMd(): Promise<string> {
@@ -94,5 +112,16 @@ export class AgentFeedClient {
       // Non-critical: don't throw, just log
       console.warn("Failed to set agent status:", err);
     }
+  }
+
+  async reportSession(sessionName: string, claudeSessionId: string): Promise<void> {
+    await this.request("/api/agents/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_name: sessionName,
+        claude_session_id: claudeSessionId,
+      }),
+    });
   }
 }

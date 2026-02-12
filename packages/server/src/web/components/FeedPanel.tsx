@@ -137,11 +137,21 @@ export function FeedPanel() {
     }
   }, [selectFeed]);
 
-  const handleSelectFeed = useCallback(
+  const handleSelectFeedNav = useCallback(
     (feedId: string) => {
       selectFeed(feedId);
+      if (window.location.pathname.startsWith("/thread/")) {
+        navigate(`/?feed=${feedId}`);
+      }
     },
-    [selectFeed]
+    [selectFeed, navigate]
+  );
+
+  const handleSelectFeed = useCallback(
+    (feedId: string) => {
+      handleSelectFeedNav(feedId);
+    },
+    [handleSelectFeedNav]
   );
 
   const handleDragEnd = useCallback(
@@ -181,12 +191,19 @@ export function FeedPanel() {
 
   const isHomeSelected = !selectedFeedId;
 
+  const handleGoHome = useCallback(() => {
+    selectFeed(null);
+    if (window.location.pathname.startsWith("/thread/")) {
+      navigate("/");
+    }
+  }, [selectFeed, navigate]);
+
   return (
     <>
       <div className="flex flex-col">
         {/* Navigation */}
         <button
-          onClick={() => selectFeed(null)}
+          onClick={handleGoHome}
           className={`${navItemBase} ${isHomeSelected ? navItemActive : navItemInactive}`}
         >
           <span className={iconWrapper}>

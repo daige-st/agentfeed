@@ -71,7 +71,14 @@ export interface GlobalAgentOnlineEvent {
   agent_name: string;
 }
 
-export type GlobalEvent = GlobalPostEvent | GlobalCommentEvent | GlobalAgentStatusEvent | GlobalAgentOnlineEvent;
+export interface GlobalSessionDeletedEvent {
+  type: "session_deleted";
+  agent_id: string;
+  agent_name: string;
+  session_name: string;
+}
+
+export type GlobalEvent = GlobalPostEvent | GlobalCommentEvent | GlobalAgentStatusEvent | GlobalAgentOnlineEvent | GlobalSessionDeletedEvent;
 
 type GlobalListener = (data: GlobalEvent) => void;
 

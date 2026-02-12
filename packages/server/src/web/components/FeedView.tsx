@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Send, Loader2, Bot } from "lucide-react";
+import { useNavigate } from "react-router";
+import { Send, Loader2 } from "lucide-react";
 import { api, type PostItem, type FeedItem, type FeedParticipant } from "../lib/api";
 import { autoResize } from "../lib/utils";
 import { PostCard } from "./PostCard";
+import { AgentChip } from "./AgentChip";
 import { MentionPopup } from "./MentionPopup";
 import { useFeedStore } from "../store/useFeedStore";
 import { useFeedSSE } from "../hooks/useFeedSSE";
@@ -44,6 +46,7 @@ export function FeedView({ feedId }: FeedViewProps) {
   const clearScrollToPostId = useFeedStore((s) => s.clearScrollToPostId);
   const { subscribeAllComments } = useFeedSSE(feedId);
   const { onlineAgents, agentsByFeed } = useActiveAgentsContext();
+  const navigate = useNavigate();
 
   // Subscribe to all comments via SSE to update comment counts in real-time
   useEffect(() => {
@@ -155,42 +158,17 @@ export function FeedView({ feedId }: FeedViewProps) {
                 const isOnline = onlineAgents.has(agent.agent_id);
                 const activeAgent = agentsByFeed.get(feedId)?.get(agent.agent_id);
                 const isTyping = !!activeAgent;
-                const canNavigate = isTyping && activeAgent.post_id;
+                const canNavigate = isTyping && !!activeAgent.post_id;
 
                 return (
-                  <button
+                  <AgentChip
                     key={agent.agent_id}
-                    type="button"
-                    onClick={() => {
-                      if (canNavigate) {
-                        scrollToAndHighlight(activeAgent.post_id);
-                      }
-                    }}
+                    name={agent.agent_name}
+                    isTyping={isTyping}
+                    isOnline={isOnline}
                     disabled={!canNavigate}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${
-                      isTyping
-                        ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950/30 text-gray-900 dark:text-text-primary cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/50"
-                        : isOnline
-                          ? "border-card-border bg-white dark:bg-surface-active text-gray-900 dark:text-text-primary cursor-default"
-                          : "border-gray-200 dark:border-border-default bg-white dark:bg-surface-active text-gray-400 dark:text-text-tertiary opacity-50 cursor-default"
-                    }`}
-                  >
-                    <div className="relative">
-                      <Bot size={16} className={isTyping || isOnline ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-text-tertiary"} />
-                      {(isTyping || isOnline) && (
-                        <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                          {isTyping && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />}
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-sm font-medium">{agent.agent_name}</span>
-                    {isTyping && (
-                      <span className="text-[10px] font-medium text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 rounded-full">
-                        Active
-                      </span>
-                    )}
-                  </button>
+                    onClick={canNavigate ? () => navigate(`/thread/${activeAgent.post_id}`, { state: { scrollToComments: true } }) : undefined}
+                  />
                 );
               })}
             </div>
@@ -215,21 +193,14 @@ export function FeedView({ feedId }: FeedViewProps) {
         </div>
       ) : (
         <div className="mt-8 space-y-4">
-          {posts.map((post) => {
-            const feedAgents = agentsByFeed.get(feedId);
-            const postTypingAgents = feedAgents
-              ? [...feedAgents.values()].filter((a) => a.post_id === post.id)
-              : [];
-            return (
+          {posts.map((post) => (
               <PostCard
                 key={post.id}
                 post={post}
-                typingAgents={postTypingAgents}
                 onPostDeleted={(id) => setPosts((prev) => prev.filter((p) => p.id !== id))}
                 onPostUpdated={(id, updated) => setPosts((prev) => prev.map((p) => p.id === id ? updated : p))}
               />
-            );
-          })}
+          ))}
 
           {hasMore && (
             <button

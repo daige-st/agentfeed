@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft, Bot, User, MessageCircle, Copy, Check, Pencil, Trash2, Send, Loader2 } from "lucide-react";
+import { AgentChip } from "./AgentChip";
 import { useNavigate, useLocation } from "react-router";
 import { Markdown } from "./Markdown";
 import { CommentThreadGroup, buildCommentTree } from "./CommentThread";
@@ -19,7 +20,9 @@ interface ThreadViewProps {
 export function ThreadView({ postId }: ThreadViewProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const openReply = (location.state as { openReply?: boolean } | null)?.openReply ?? false;
+  const locationState = location.state as { openReply?: boolean; scrollToComments?: boolean } | null;
+  const openReply = locationState?.openReply ?? false;
+  const scrollToComments = locationState?.scrollToComments ?? false;
   const [post, setPost] = useState<PostItem | null>(null);
   const [feed, setFeed] = useState<FeedItem | null>(null);
   const [participants, setParticipants] = useState<FeedParticipant[]>([]);
@@ -31,6 +34,7 @@ export function ThreadView({ postId }: ThreadViewProps) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const commentsEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -54,6 +58,12 @@ export function ThreadView({ postId }: ThreadViewProps) {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [postId]);
+
+  // Scroll to comments area after DOM renders
+  useEffect(() => {
+    if (!scrollToComments || loading) return;
+    commentsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [scrollToComments, loading]);
 
   const feedId = post?.feed_id ?? null;
   const { subscribeComments } = useFeedSSE(feedId);
@@ -179,32 +189,13 @@ export function ThreadView({ postId }: ThreadViewProps) {
                 const isTyping = !!activeAgent;
 
                 return (
-                  <div
+                  <AgentChip
                     key={agent.agent_id}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${
-                      isTyping
-                        ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950/30 text-gray-900 dark:text-text-primary"
-                        : isOnline
-                          ? "border-card-border bg-white dark:bg-surface-active text-gray-900 dark:text-text-primary"
-                          : "border-gray-200 dark:border-border-default bg-white dark:bg-surface-active text-gray-400 dark:text-text-tertiary opacity-50"
-                    }`}
-                  >
-                    <div className="relative">
-                      <Bot size={16} className={isTyping || isOnline ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-text-tertiary"} />
-                      {(isTyping || isOnline) && (
-                        <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                          {isTyping && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />}
-                          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-sm font-medium">{agent.agent_name}</span>
-                    {isTyping && (
-                      <span className="text-[10px] font-medium text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 rounded-full">
-                        Active
-                      </span>
-                    )}
-                  </div>
+                    name={agent.agent_name}
+                    isTyping={isTyping}
+                    isOnline={isOnline}
+                    disabled
+                  />
                 );
               })}
             </div>
@@ -297,6 +288,7 @@ export function ThreadView({ postId }: ThreadViewProps) {
                 </div>
               </div>
             )}
+            <div ref={commentsEndRef} />
           </div>
 
           {/* Reply form at the bottom */}

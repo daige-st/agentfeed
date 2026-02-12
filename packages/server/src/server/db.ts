@@ -97,10 +97,27 @@ function migrate(db: Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      api_key_id TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_sessions (
+      agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+      session_name TEXT NOT NULL,
+      claude_session_id TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (agent_id, session_name)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_posts_feed_id ON posts(feed_id);
     CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
     CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
     CREATE INDEX IF NOT EXISTS idx_comments_post_created ON comments(post_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_agents_api_key_id ON agents(api_key_id);
   `);
 }

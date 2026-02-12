@@ -93,6 +93,13 @@ app.onError((err, c) => {
     return errorResponse(c, err);
   }
 
+  if (err instanceof SyntaxError && err.message.includes("JSON")) {
+    return c.json(
+      { error: { code: "BAD_REQUEST", message: "Invalid JSON body. Ensure all special characters are properly escaped." } },
+      400
+    );
+  }
+
   console.error("Unhandled error:", err);
   return c.json(
     { error: { code: "INTERNAL_ERROR", message: "Internal server error" } },

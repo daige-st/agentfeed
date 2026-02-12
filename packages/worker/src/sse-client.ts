@@ -10,7 +10,7 @@ export interface SSEConnection {
   close: () => void;
 }
 
-const EVENT_TYPES = ["heartbeat", "post_created", "comment_created"] as const;
+const EVENT_TYPES = ["heartbeat", "post_created", "comment_created", "session_deleted"] as const;
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 60_000;
@@ -19,6 +19,7 @@ const BACKOFF_RESET_AFTER_MS = 30_000;
 export function connectSSE(
   url: string,
   apiKey: string,
+  agentId: string | undefined,
   onEvent: (event: SSEEvent) => void,
   onError: (error: Error) => void
 ): SSEConnection {
@@ -37,7 +38,11 @@ export function connectSSE(
       fetch: (input, init) =>
         fetch(input, {
           ...init,
-          headers: { ...init.headers, Authorization: `Bearer ${apiKey}` },
+          headers: {
+            ...init.headers,
+            Authorization: `Bearer ${apiKey}`,
+            ...(agentId ? { "X-Agent-Id": agentId } : {}),
+          },
         }),
     });
     currentEs = es;

@@ -1,25 +1,26 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
-import { Settings, Bot, CheckCheck, Inbox, Eye } from "lucide-react";
-import { api, type FeedItem, type InboxItem, type ApiKeyItem } from "../lib/api";
+import { Settings, CheckCheck, Inbox, Eye } from "lucide-react";
+import { api, type FeedItem, type InboxItem, type ApiKeyItem, type AgentItem } from "../lib/api";
 import { PostCard } from "./PostCard";
+import { AgentChip } from "./AgentChip";
 import { useActiveAgentsContext } from "../pages/Home";
 import { useFeedStore } from "../store/useFeedStore";
 
-function AgentList({ keys }: { keys: ApiKeyItem[] }) {
-  const { agentsByFeed, getAllActiveAgentIds } = useActiveAgentsContext();
-  const selectFeedAndScrollToPost = useFeedStore((s) => s.selectFeedAndScrollToPost);
+function AgentList({ agents }: { agents: AgentItem[] }) {
+  const { agentsByFeed, onlineAgents, getAllActiveAgentIds } = useActiveAgentsContext();
+  const navigate = useNavigate();
   const activeIds = getAllActiveAgentIds();
 
   // Build a map: agentId -> { feedId, postId } (for navigation)
   const agentFeedMap = new Map<string, { feedId: string; postId: string }>();
-  for (const [feedId, agents] of agentsByFeed) {
-    for (const [agentId, agent] of agents) {
+  for (const [feedId, feedAgents] of agentsByFeed) {
+    for (const [agentId, agent] of feedAgents) {
       agentFeedMap.set(agentId, { feedId, postId: agent.post_id });
     }
   }
 
-  if (keys.length === 0) return null;
+  if (agents.length === 0) return null;
 
   return (
     <div className="mb-8">
@@ -27,41 +28,21 @@ function AgentList({ keys }: { keys: ApiKeyItem[] }) {
         Agents
       </h2>
       <div className="flex flex-wrap gap-2">
-        {keys.map((key) => {
-          const isActive = activeIds.has(key.id);
-          const activeInfo = agentFeedMap.get(key.id);
+        {agents.map((agent) => {
+          const isActive = activeIds.has(agent.id);
+          const isOnline = onlineAgents.has(agent.id);
+          const activeInfo = agentFeedMap.get(agent.id);
+          const canNavigate = isActive && !!activeInfo;
 
           return (
-            <button
-              key={key.id}
-              type="button"
-              onClick={() => {
-                if (activeInfo) {
-                  selectFeedAndScrollToPost(activeInfo.feedId, activeInfo.postId);
-                }
-              }}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${
-                isActive
-                  ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950/30 text-gray-900 dark:text-text-primary cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/50"
-                  : "border-gray-200 dark:border-border-default bg-white dark:bg-surface-active text-gray-400 dark:text-text-tertiary opacity-50 cursor-default"
-              }`}
-            >
-              <div className="relative">
-                <Bot size={16} className={isActive ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-text-tertiary"} />
-                {isActive && (
-                  <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-                  </span>
-                )}
-              </div>
-              <span className="text-sm font-medium">{key.name}</span>
-              {isActive && (
-                <span className="text-[10px] font-medium text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 rounded-full">
-                  Active
-                </span>
-              )}
-            </button>
+            <AgentChip
+              key={agent.id}
+              name={agent.name}
+              isTyping={isActive}
+              isOnline={isOnline}
+              disabled={!canNavigate}
+              onClick={canNavigate ? () => navigate(`/thread/${activeInfo.postId}`, { state: { scrollToComments: true } }) : undefined}
+            />
           );
         })}
       </div>
@@ -72,6 +53,7 @@ function AgentList({ keys }: { keys: ApiKeyItem[] }) {
 export function EmptyState() {
   const [items, setItems] = useState<InboxItem[]>([]);
   const [keys, setKeys] = useState<ApiKeyItem[]>([]);
+  const [agents, setAgents] = useState<AgentItem[]>([]);
   const [feeds, setFeeds] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -79,8 +61,9 @@ export function EmptyState() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [mode, setMode] = useState<"unread" | "all">("unread");
   const [markingAll, setMarkingAll] = useState(false);
+  const invalidateFeedList = useFeedStore((s) => s.invalidateFeedList);
   const navigate = useNavigate();
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const { subscribeGlobalEvent } = useActiveAgentsContext();
 
   const loadInbox = useCallback(async (inboxMode: "unread" | "all") => {
@@ -96,17 +79,15 @@ export function EmptyState() {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([api.getKeys(), api.getFeeds(), api.getInbox(undefined, 20, "unread")])
-      .then(([keyList, feedList, inboxData]) => {
+    Promise.all([api.getKeys(), api.getAgents(), api.getFeeds(), loadInbox("unread")])
+      .then(([keyList, agentRes, feedList]) => {
         setKeys(keyList);
+        setAgents(agentRes.data);
         setFeeds(feedList);
-        setItems(inboxData.data);
-        setNextCursor(inboxData.next_cursor);
-        setHasMore(inboxData.has_more);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [loadInbox]);
 
   // SSE: listen for new posts/comments via shared connection
   useEffect(() => {
@@ -155,12 +136,13 @@ export function EmptyState() {
       setItems([]);
       setNextCursor(null);
       setHasMore(false);
+      invalidateFeedList();
     } catch {
       // ignore
     } finally {
       setMarkingAll(false);
     }
-  }, [markingAll]);
+  }, [markingAll, invalidateFeedList]);
 
   if (loading) {
     return (
@@ -198,7 +180,7 @@ export function EmptyState() {
   // Inbox view
   return (
     <div className="h-full flex flex-col pt-1 md:pt-24">
-      <AgentList keys={keys} />
+      <AgentList agents={agents} />
 
       {/* Inbox header */}
       <div className="flex items-center justify-between mb-4">
@@ -282,25 +264,12 @@ export function EmptyState() {
 
 function InboxPostCard({ item }: { item: InboxItem }) {
   return (
-    <div className="relative">
-      {/* Unread indicator */}
-      {item.is_new_post === 1 && (
-        <div className="absolute left-1 top-8 z-10">
-          <span className="block w-2.5 h-2.5 rounded-full bg-accent" />
-        </div>
-      )}
+    <div className={item.is_new_post === 1 ? "border-l-2 border-accent pl-2" : ""}>
       <PostCard
         post={item}
         feedName={item.feed_name}
+        newCommentCount={item.is_new_post === 0 ? item.new_comment_count : undefined}
       />
-      {/* New comments badge */}
-      {item.new_comment_count > 0 && item.is_new_post === 0 && (
-        <div className="absolute right-6 bottom-14 z-10">
-          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-accent/10 text-accent">
-            {item.new_comment_count} new
-          </span>
-        </div>
-      )}
     </div>
   );
 }

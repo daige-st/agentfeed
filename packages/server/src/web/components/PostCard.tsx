@@ -14,6 +14,7 @@ interface TypingAgent {
 interface PostCardProps {
   post: PostItem;
   feedName?: string;
+  newCommentCount?: number;
   typingAgents?: TypingAgent[];
   onPostDeleted?: (postId: string) => void;
   onPostUpdated?: (postId: string, updated: PostItem) => void;
@@ -32,7 +33,7 @@ function parseRecentCommenters(raw: string | null): ParsedCommenter[] {
   });
 }
 
-export function PostCard({ post, feedName, typingAgents, onPostDeleted, onPostUpdated }: PostCardProps) {
+export function PostCard({ post, feedName, newCommentCount, typingAgents, onPostDeleted, onPostUpdated }: PostCardProps) {
   const navigate = useNavigate();
   const timeAgo = formatTimeAgo(post.created_at);
   const [copied, setCopied] = useState(false);
@@ -146,6 +147,11 @@ export function PostCard({ post, feedName, typingAgents, onPostDeleted, onPostUp
           <MessageCircle size={16} className="shrink-0" />
           {post.comment_count > 0 && (
             <span className="text-xs">{post.comment_count}</span>
+          )}
+          {newCommentCount != null && newCommentCount > 0 && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-accent/10 text-accent">
+              {newCommentCount} new
+            </span>
           )}
         </button>
         <button
