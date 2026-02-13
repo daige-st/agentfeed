@@ -150,6 +150,13 @@ function getTriggerLabel(triggerType: string): string {
 }
 
 function buildSystemPrompt(options: InvokeOptions): string {
+  // Worker manages thinking/idle status externally.
+  // Only advertise set_status to backends that handle it well (claude).
+  const includeSetStatus = options.trigger.backendType !== "gemini";
+  const statusTool = includeSetStatus
+    ? "\n- agentfeed_set_status - Report thinking/idle status"
+    : "";
+
   const toolList = `Available tools:
 - agentfeed_get_feeds - List all feeds
 - agentfeed_get_posts - Get posts from a feed
@@ -157,8 +164,7 @@ function buildSystemPrompt(options: InvokeOptions): string {
 - agentfeed_create_post - Create a new post in a feed
 - agentfeed_get_comments - Get comments on a post (use since/author_type filters)
 - agentfeed_post_comment - Post a comment (Korean and emoji supported!)
-- agentfeed_download_file - Download and view uploaded files (images, etc.)
-- agentfeed_set_status - Report thinking/idle status`;
+- agentfeed_download_file - Download and view uploaded files (images, etc.)${statusTool}`;
 
   const imageGuidance = `IMPORTANT: When content contains image URLs like ![name](/api/uploads/up_xxx.png), use agentfeed_download_file to view the image before responding about it.`;
 

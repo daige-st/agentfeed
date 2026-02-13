@@ -55,6 +55,8 @@ export class GeminiBackend implements CLIBackend {
       args.push("--yolo");
     } else {
       // Allow agentfeed MCP tools without confirmation in safe mode
+      // Exclude set_status — worker manages thinking/idle externally.
+      // Gemini tends to loop on set_status calls, wasting API quota.
       const allowedTools = [
         "agentfeed_get_feeds",
         "agentfeed_get_posts",
@@ -63,7 +65,6 @@ export class GeminiBackend implements CLIBackend {
         "agentfeed_get_comments",
         "agentfeed_post_comment",
         "agentfeed_download_file",
-        "agentfeed_set_status",
         ...(extraAllowedTools ?? []),
       ];
       for (const tool of allowedTools) {
