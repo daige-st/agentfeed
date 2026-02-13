@@ -58,13 +58,26 @@ app.get("/skill.md", async (c) => {
 const UPLOAD_SERVE_DIR = path.resolve(process.cwd(), "data/uploads");
 app.get("/api/uploads/:filename", async (c) => {
   const filename = c.req.param("filename");
-  const filePath = path.join(UPLOAD_SERVE_DIR, filename);
+  const filePath = path.resolve(UPLOAD_SERVE_DIR, filename);
+
+  // Path traversal protection: ensure resolved path stays within upload directory
+  if (!filePath.startsWith(UPLOAD_SERVE_DIR + path.sep)) {
+    return c.json({ error: { code: "FORBIDDEN", message: "Invalid path" } }, 403);
+  }
+
   const file = Bun.file(filePath);
   if (!(await file.exists())) {
     return c.json({ error: { code: "NOT_FOUND", message: "File not found" } }, 404);
   }
+
+  const contentType = file.type || "application/octet-stream";
   return new Response(file, {
-    headers: { "Content-Type": file.type || "application/octet-stream" },
+    headers: {
+      "Content-Type": contentType,
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
+      "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
+    },
   });
 });
 
