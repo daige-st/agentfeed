@@ -23,9 +23,20 @@ export class FollowStore extends PersistentStore {
     return this.posts.has(postId);
   }
 
+  private static readonly MAX_SIZE = 500;
+
   add(postId: string): void {
     if (this.posts.has(postId)) return;
     this.posts.add(postId);
+    // Evict oldest entries if over limit
+    if (this.posts.size > FollowStore.MAX_SIZE) {
+      const iter = this.posts.values();
+      while (this.posts.size > FollowStore.MAX_SIZE) {
+        const oldest = iter.next().value;
+        if (oldest !== undefined) this.posts.delete(oldest);
+        else break;
+      }
+    }
     this.save();
   }
 

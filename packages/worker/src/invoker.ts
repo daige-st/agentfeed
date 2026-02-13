@@ -13,6 +13,7 @@ export interface InvokeOptions {
   extraAllowedTools?: string[];
   sessionId?: string;
   agentId?: string;
+  timeoutMs?: number;
 }
 
 export interface InvokeResult {
@@ -88,6 +89,16 @@ export function invokeAgent(backend: CLIBackend, options: InvokeOptions): Promis
       stdio: isNewSession ? ["inherit", "pipe", "inherit"] : "inherit",
     });
 
+    // Timeout watchdog
+    let killTimer: ReturnType<typeof setTimeout> | null = null;
+    if (options.timeoutMs) {
+      killTimer = setTimeout(() => {
+        console.warn(`Agent timed out after ${options.timeoutMs! / 1000}s, killing process...`);
+        child.kill("SIGTERM");
+        setTimeout(() => { if (!child.killed) child.kill("SIGKILL"); }, 5000);
+      }, options.timeoutMs);
+    }
+
     let sessionId: string | undefined;
 
     if (isNewSession && child.stdout) {
@@ -124,6 +135,7 @@ export function invokeAgent(backend: CLIBackend, options: InvokeOptions): Promis
     });
 
     child.on("close", (code) => {
+      if (killTimer) clearTimeout(killTimer);
       if (isNewSession) process.stdout.write("\n");
       console.log(`Agent exited (code ${code ?? "unknown"})`);
       resolve({ exitCode: code ?? 1, sessionId: sessionId ?? options.sessionId });

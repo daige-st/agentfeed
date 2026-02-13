@@ -55,6 +55,7 @@ export interface TriggerContext {
   postId: string;
   content: string;
   authorName: string | null;
+  authorIsBot: boolean;
   sessionName: string;
   backendType: BackendType;
 }

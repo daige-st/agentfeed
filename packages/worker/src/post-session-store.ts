@@ -49,9 +49,20 @@ export class PostSessionStore extends PersistentStore {
     return { backendType: "claude", sessionName: raw };
   }
 
+  private static readonly MAX_SIZE = 1000;
+
   /** Store as "backendType:sessionName" */
   set(postId: string, backendType: BackendType, sessionName: string): void {
     this.map.set(postId, `${backendType}:${sessionName}`);
+    // Evict oldest entries if over limit
+    if (this.map.size > PostSessionStore.MAX_SIZE) {
+      const iter = this.map.keys();
+      while (this.map.size > PostSessionStore.MAX_SIZE) {
+        const oldest = iter.next().value;
+        if (oldest !== undefined) this.map.delete(oldest);
+        else break;
+      }
+    }
     this.save();
   }
 

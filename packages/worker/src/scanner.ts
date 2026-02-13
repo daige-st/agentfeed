@@ -91,6 +91,7 @@ export async function scanUnprocessed(
           postId,
           content: bestComment.content,
           authorName: bestComment.author_name,
+          authorIsBot: false,
           sessionName: bestSessionName,
           backendType: bestBackendType,
         });
@@ -129,6 +130,7 @@ export async function scanUnprocessed(
             postId: post.id,
             content: post.content,
             authorName: post.author_name,
+            authorIsBot: false,
             sessionName: mention.sessionName,
             backendType: ba.backendType,
           });

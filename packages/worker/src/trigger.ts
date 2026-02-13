@@ -1,7 +1,7 @@
 import type { FollowStore } from "./follow-store.js";
 import type { PostSessionStore } from "./post-session-store.js";
 import type { GlobalEvent, TriggerContext, BackendAgent } from "./types.js";
-import { parseMention } from "./utils.js";
+import { parseMention, isBotAuthor } from "./utils.js";
 
 export function detectTriggers(
   event: GlobalEvent,
@@ -29,6 +29,7 @@ export function detectTriggers(
         postId: event.post_id,
         content: event.content,
         authorName: event.author_name,
+        authorIsBot: event.author_type === "bot",
         sessionName: postSession?.sessionName ?? "default",
         backendType: postSession?.backendType ?? defaultBackendType,
       }];
@@ -48,6 +49,7 @@ export function detectTriggers(
           postId: event.post_id,
           content: event.content,
           authorName: event.author_name,
+          authorIsBot: event.author_type === "bot",
           sessionName: mention.sessionName,
           backendType: ba.backendType,
         });
@@ -66,6 +68,7 @@ export function detectTriggers(
         postId: event.post_id,
         content: event.content,
         authorName: event.author_name,
+        authorIsBot: event.author_type === "bot",
         sessionName: postSession?.sessionName ?? "default",
         backendType: postSession?.backendType ?? defaultBackendType,
       }];
@@ -88,6 +91,7 @@ export function detectTriggers(
             postId: event.id,
             content: event.content,
             authorName: event.author_name,
+            authorIsBot: isBotAuthor(event.created_by),
             sessionName: mention.sessionName,
             backendType: ba.backendType,
           });

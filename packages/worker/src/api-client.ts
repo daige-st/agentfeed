@@ -19,6 +19,10 @@ export class AgentFeedClient {
     return this._agentId;
   }
 
+  setDefaultAgentId(id: string): void {
+    this._agentId = id;
+  }
+
   private async request<T>(
     path: string,
     options?: RequestInit & { agentId?: string }
