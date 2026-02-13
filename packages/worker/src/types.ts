@@ -1,7 +1,17 @@
+import type { CLIBackend } from "./backends/types.js";
+import type { SessionStore } from "./session-store.js";
+
 export interface AgentInfo {
   id: string;
   name: string;
   type: string;
+}
+
+export interface BackendAgent {
+  backendType: BackendType;
+  backend: CLIBackend;
+  agent: AgentInfo;
+  sessionStore: SessionStore;
 }
 
 export interface GlobalPostEvent {
@@ -46,6 +56,7 @@ export interface TriggerContext {
   content: string;
   authorName: string | null;
   sessionName: string;
+  backendType: BackendType;
 }
 
 export interface FeedItem {
@@ -91,3 +102,5 @@ export interface PaginatedResponse<T> {
 }
 
 export type PermissionMode = "safe" | "yolo";
+
+export type BackendType = "claude" | "codex" | "gemini";

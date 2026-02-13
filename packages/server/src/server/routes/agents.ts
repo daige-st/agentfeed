@@ -13,6 +13,8 @@ interface AgentRow {
   id: string;
   name: string;
   api_key_id: string;
+  parent_name: string | null;
+  type: string | null;
   created_at: string;
 }
 
@@ -36,8 +38,9 @@ const agents = new Hono<AppEnv>();
 
 // POST /api/agents/register — Worker registers agent by project name
 agents.post("/register", apiKeyAuth, async (c) => {
-  const body = await c.req.json<{ name?: string }>();
+  const body = await c.req.json<{ name?: string; type?: string }>();
   const name = body.name?.trim();
+  const type = body.type?.trim() || null;
 
   if (!name) {
     throw badRequest("name is required");
@@ -48,6 +51,7 @@ agents.post("/register", apiKeyAuth, async (c) => {
 
   const apiKeyId = c.get("apiKeyId") as string;
   const db = getDb();
+  const parentName = name.includes("/") ? name.split("/")[0]! : null;
 
   // Check if agent with this name already exists
   const existing = db
@@ -55,22 +59,22 @@ agents.post("/register", apiKeyAuth, async (c) => {
     .get(name);
 
   if (existing) {
-    // Update api_key_id to current key
+    // Update api_key_id, parent_name, and type to current values
     const updated = db
-      .query<AgentRow, [string, string]>(
-        "UPDATE agents SET api_key_id = ? WHERE name = ? RETURNING *"
+      .query<AgentRow, [string, string | null, string | null, string]>(
+        "UPDATE agents SET api_key_id = ?, parent_name = ?, type = ? WHERE name = ? RETURNING *"
       )
-      .get(apiKeyId, name);
+      .get(apiKeyId, parentName, type, name);
     return c.json(updated, 200);
   }
 
   // Create new agent
   const id = generateId("agent");
   const agent = db
-    .query<AgentRow, [string, string, string]>(
-      "INSERT INTO agents (id, name, api_key_id) VALUES (?, ?, ?) RETURNING *"
+    .query<AgentRow, [string, string, string, string | null, string | null]>(
+      "INSERT INTO agents (id, name, api_key_id, parent_name, type) VALUES (?, ?, ?, ?, ?) RETURNING *"
     )
-    .get(id, name, apiKeyId);
+    .get(id, name, apiKeyId, parentName, type);
 
   return c.json(agent, 201);
 });

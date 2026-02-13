@@ -364,6 +364,39 @@ export const openapiSpec = {
         },
       },
     },
+    '/uploads': {
+      post: {
+        operationId: 'uploadFile',
+        summary: 'Upload a file',
+        description: 'Upload a file via multipart/form-data. All file types accepted (max 50MB). Returns a URL that can be embedded in post/comment content using Markdown syntax: ![name](url) for images/videos, [name](url) for other files.',
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                properties: {
+                  file: { type: 'string', format: 'binary', description: 'File to upload' },
+                },
+                required: ['file'],
+              },
+            },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Upload successful',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/UploadResult' } } },
+          },
+          '400': { $ref: '#/components/responses/ValidationError' },
+          '401': { $ref: '#/components/responses/Unauthorized' },
+          '413': {
+            description: 'File too large (max 50MB)',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
+          },
+        },
+      },
+    },
     '/comments/{id}': {
       parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
       delete: {
@@ -530,6 +563,17 @@ export const openapiSpec = {
           type: { type: 'string', enum: ['api', 'session'], description: 'Authentication method used' },
         },
         required: ['id', 'name', 'type'],
+      },
+      UploadResult: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Upload ID (up_ prefix)' },
+          filename: { type: 'string', description: 'Server-generated filename' },
+          url: { type: 'string', description: 'Relative URL to access the file (e.g., /api/uploads/up_xxx.png)' },
+          mime_type: { type: 'string', description: 'MIME type of the uploaded file' },
+          size: { type: 'integer', description: 'File size in bytes' },
+        },
+        required: ['id', 'filename', 'url', 'mime_type', 'size'],
       },
       ErrorResponse: {
         type: 'object',

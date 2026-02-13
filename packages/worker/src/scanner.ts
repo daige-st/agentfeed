@@ -1,4 +1,4 @@
-import type { AgentInfo, FeedCommentItem, TriggerContext } from "./types.js";
+import type { FeedCommentItem, TriggerContext, BackendAgent } from "./types.js";
 import type { AgentFeedClient } from "./api-client.js";
 import type { FollowStore } from "./follow-store.js";
 import type { PostSessionStore } from "./post-session-store.js";
@@ -6,13 +6,17 @@ import { parseMention, isBotAuthor } from "./utils.js";
 
 export async function scanUnprocessed(
   client: AgentFeedClient,
-  agent: AgentInfo,
+  backendAgents: BackendAgent[],
   followStore?: FollowStore,
-  postSessionStore?: PostSessionStore
+  postSessionStore?: PostSessionStore,
+  ownAgentIds?: Set<string>
 ): Promise<TriggerContext[]> {
   const triggers: TriggerContext[] = [];
   const feeds = await client.getFeeds();
   const processedPostIds = new Set<string>();
+  const isOwnAgent = (id: string | null) =>
+    id !== null && (ownAgentIds ? ownAgentIds.has(id) : false);
+  const defaultBackendType = backendAgents[0]?.backendType ?? "claude";
 
   for (const feed of feeds) {
     // --- Scan comments (existing logic) ---
@@ -34,30 +38,38 @@ export async function scanUnprocessed(
       let bestTriggerType: TriggerContext["triggerType"] | null = null;
       let bestComment: FeedCommentItem | null = null;
       let bestSessionName = "default";
+      let bestBackendType = defaultBackendType;
 
       for (const comment of postComments) {
-        // Check for @mentions (highest priority)
-        const mention = parseMention(comment.content, agent.name);
-        if (mention.mentioned) {
-          bestTriggerType = "mention";
-          bestComment = comment;
-          bestSessionName = mention.sessionName;
+        // Check for @mentions across all backend agents (highest priority)
+        for (const ba of backendAgents) {
+          const mention = parseMention(comment.content, ba.agent.name);
+          if (mention.mentioned) {
+            bestTriggerType = "mention";
+            bestComment = comment;
+            bestSessionName = mention.sessionName;
+            bestBackendType = ba.backendType;
+          }
         }
 
         // Check if this is on an agent-owned post
-        if (!bestTriggerType && comment.post_created_by === agent.id) {
+        if (!bestTriggerType && isOwnAgent(comment.post_created_by)) {
+          const postSession = postSessionStore?.getWithType(postId);
           bestTriggerType = "own_post_comment";
           bestComment = comment;
-          bestSessionName = postSessionStore?.get(postId) ?? "default";
+          bestSessionName = postSession?.sessionName ?? "default";
+          bestBackendType = postSession?.backendType ?? defaultBackendType;
         }
       }
 
       // Check if this is in a followed thread
       if (!bestTriggerType && followStore?.has(postId)) {
+        const postSession = postSessionStore?.getWithType(postId);
         bestTriggerType = "thread_follow_up";
         // Use the last human comment as the trigger
         bestComment = postComments[postComments.length - 1] ?? null;
-        bestSessionName = postSessionStore?.get(postId) ?? "default";
+        bestSessionName = postSession?.sessionName ?? "default";
+        bestBackendType = postSession?.backendType ?? defaultBackendType;
       }
 
       if (!bestTriggerType || !bestComment) continue;
@@ -80,6 +92,7 @@ export async function scanUnprocessed(
           content: bestComment.content,
           authorName: bestComment.author_name,
           sessionName: bestSessionName,
+          backendType: bestBackendType,
         });
         processedPostIds.add(postId);
       }
@@ -96,26 +109,31 @@ export async function scanUnprocessed(
       // Skip posts without content
       if (!post.content) continue;
 
-      const mention = parseMention(post.content, agent.name);
-      if (!mention.mentioned) continue;
+      // Try mentions across all backend agents
+      for (const ba of backendAgents) {
+        const mention = parseMention(post.content, ba.agent.name);
+        if (!mention.mentioned) continue;
 
-      // Check if there's any bot reply on this post
-      const botReplies = await client.getPostComments(post.id, {
-        author_type: "bot",
-        limit: 1,
-      });
-
-      if (botReplies.data.length === 0) {
-        triggers.push({
-          triggerType: "mention",
-          eventId: post.id,
-          feedId: feed.id,
-          feedName: feed.name,
-          postId: post.id,
-          content: post.content,
-          authorName: post.author_name,
-          sessionName: mention.sessionName,
+        // Check if there's any bot reply on this post
+        const botReplies = await client.getPostComments(post.id, {
+          author_type: "bot",
+          limit: 1,
         });
+
+        if (botReplies.data.length === 0) {
+          triggers.push({
+            triggerType: "mention",
+            eventId: post.id,
+            feedId: feed.id,
+            feedName: feed.name,
+            postId: post.id,
+            content: post.content,
+            authorName: post.author_name,
+            sessionName: mention.sessionName,
+            backendType: ba.backendType,
+          });
+        }
+        break; // First matching backend wins for this post
       }
     }
   }

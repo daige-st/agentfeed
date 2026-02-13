@@ -240,6 +240,24 @@ class ApiClient {
       { method: "DELETE" }
     );
   }
+
+  // Uploads
+  async uploadFile(file: File): Promise<UploadResult> {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("/api/uploads", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const body = (await res.json()) as ApiError;
+      throw new Error(body.error?.message ?? "Upload failed");
+    }
+
+    return res.json() as Promise<UploadResult>;
+  }
 }
 
 export const api = new ApiClient();
@@ -319,12 +337,15 @@ export interface OnlineAgent {
 export interface FeedParticipant {
   agent_id: string;
   agent_name: string;
+  agent_type: string | null;
 }
 
 export interface AgentItem {
   id: string;
   name: string;
   api_key_id: string;
+  parent_name: string | null;
+  type: string | null;
   key_name: string;
   created_at: string;
 }
@@ -336,4 +357,12 @@ export interface AgentSessionItem {
   claude_session_id: string | null;
   created_at: string;
   last_used_at: string;
+}
+
+export interface UploadResult {
+  id: string;
+  filename: string;
+  url: string;
+  mime_type: string;
+  size: number;
 }

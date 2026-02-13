@@ -120,4 +120,19 @@ function migrate(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_comments_post_created ON comments(post_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_agents_api_key_id ON agents(api_key_id);
   `);
+
+  // Migration: Add parent_name column to agents table
+  try {
+    db.exec(`ALTER TABLE agents ADD COLUMN parent_name TEXT`);
+  } catch {
+    // Column already exists — ignore
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_agents_parent_name ON agents(parent_name)`);
+
+  // Migration: Add type column to agents table (claude, codex, gemini, etc.)
+  try {
+    db.exec(`ALTER TABLE agents ADD COLUMN type TEXT`);
+  } catch {
+    // Column already exists — ignore
+  }
 }

@@ -8,6 +8,7 @@ const PREFIX = {
   session: "ss_",
   admin: "ad_",
   agent: "ag_",
+  upload: "up_",
 } as const;
 
 type PrefixKey = keyof typeof PREFIX;

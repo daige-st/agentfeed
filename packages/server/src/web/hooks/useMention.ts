@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { api, type AgentItem } from "../lib/api";
 
 interface UseMentionOptions {
@@ -11,6 +11,7 @@ export function useMention({ textareaRef, value, onChange }: UseMentionOptions) 
   const [mentionAgents, setMentionAgents] = useState<AgentItem[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const prevQueryRef = useRef<string | null>(null);
 
   useEffect(() => {
     api.getAgents().then((res) => setMentionAgents(res.data)).catch(() => {});
@@ -18,20 +19,28 @@ export function useMention({ textareaRef, value, onChange }: UseMentionOptions) 
 
   const filteredMentions =
     mentionQuery !== null
-      ? mentionAgents.filter((a) =>
-          a.name.toLowerCase().includes(mentionQuery.toLowerCase())
-        )
+      ? mentionAgents
+          .filter((a) =>
+            a.name.toLowerCase().includes(mentionQuery.toLowerCase())
+          )
+          .sort((a, b) => a.name.length - b.name.length)
       : [];
 
   const detectMention = useCallback(
     (text: string, cursorPos: number) => {
       const textBeforeCursor = text.slice(0, cursorPos);
-      const match = textBeforeCursor.match(/@([^\s/]*)$/);
+      const match = textBeforeCursor.match(/@([^\s]*)$/);
 
       if (match) {
+        // Refresh agent list when popup first opens
+        if (prevQueryRef.current === null) {
+          api.getAgents().then((res) => setMentionAgents(res.data)).catch(() => {});
+        }
+        prevQueryRef.current = match[1] ?? "";
         setMentionQuery(match[1] ?? "");
         setMentionIndex(0);
       } else {
+        prevQueryRef.current = null;
         setMentionQuery(null);
       }
     },
@@ -45,23 +54,37 @@ export function useMention({ textareaRef, value, onChange }: UseMentionOptions) 
 
       const cursorPos = textarea.selectionStart ?? value.length;
       const textBeforeCursor = value.slice(0, cursorPos);
-      const match = textBeforeCursor.match(/@([^\s/]*)$/);
+      const match = textBeforeCursor.match(/@([^\s]*)$/);
 
       if (match) {
         const start = cursorPos - match[0].length;
         const after = value.slice(cursorPos);
-        const inserted = `@${name} `;
-        onChange(value.slice(0, start) + inserted + after);
-        setMentionQuery(null);
 
-        setTimeout(() => {
-          textarea.focus();
-          const pos = start + inserted.length;
-          textarea.setSelectionRange(pos, pos);
-        }, 0);
+        // If selecting a base agent that has session agents, insert @name/ to show sessions
+        const hasChildren = mentionAgents.some((a) => a.parent_name === name);
+        const inserted = hasChildren ? `@${name}/` : `@${name}`;
+        const newValue = value.slice(0, start) + inserted + after;
+        onChange(newValue);
+
+        if (hasChildren) {
+          // Re-trigger detection to show session agents
+          setTimeout(() => {
+            textarea.focus();
+            const pos = start + inserted.length;
+            textarea.setSelectionRange(pos, pos);
+            detectMention(newValue, pos);
+          }, 0);
+        } else {
+          setMentionQuery(null);
+          setTimeout(() => {
+            textarea.focus();
+            const pos = start + inserted.length;
+            textarea.setSelectionRange(pos, pos);
+          }, 0);
+        }
       }
     },
-    [value, onChange, textareaRef]
+    [value, onChange, textareaRef, mentionAgents, detectMention]
   );
 
   const handleMentionKeyDown = useCallback(

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft, Bot, User, MessageCircle, Copy, Check, Pencil, Trash2, Send, Loader2, Paperclip } from "lucide-react";
-import { AgentChip } from "./AgentChip";
+import { AgentGroupList } from "./AgentChip";
 import { useNavigate, useLocation } from "react-router";
 import { Markdown } from "./Markdown";
 import { CommentThreadGroup, buildCommentTree } from "./CommentThread";
@@ -11,6 +11,7 @@ import type { PostItem, CommentItem, FeedItem, FeedParticipant } from "../lib/ap
 import { autoResize, formatTimeAgo } from "../lib/utils";
 import { useMention } from "../hooks/useMention";
 import { useFileUpload } from "../hooks/useFileUpload";
+import { FilePreviewStrip } from "./FilePreview";
 import { useFeedSSE } from "../hooks/useFeedSSE";
 import { useFeedStore } from "../store/useFeedStore";
 import { useActiveAgentsContext } from "../pages/Home";
@@ -197,23 +198,21 @@ export function ThreadView({ postId }: ThreadViewProps) {
         <div className="mb-6">
           <EditableFeedName value={feed.name} onSave={handleUpdateFeedName} />
           {participants.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              {participants.map((agent) => {
-                const isOnline = onlineAgents.has(agent.agent_id);
-                const activeAgent = feedId ? agentsByFeed.get(feedId)?.get(agent.agent_id) : undefined;
-                const isTyping = !!activeAgent;
-
-                return (
-                  <AgentChip
-                    key={agent.agent_id}
-                    name={agent.agent_name}
-                    isTyping={isTyping}
-                    isOnline={isOnline}
-                    disabled
-                  />
-                );
-              })}
-            </div>
+            <AgentGroupList
+              participants={participants}
+              feedId={feedId!}
+              onlineAgents={onlineAgents}
+              agentsByFeed={agentsByFeed}
+              onNavigate={() => {}}
+              onDelete={async (agentId) => {
+                try {
+                  await api.deleteAgent(agentId);
+                  setParticipants((prev) => prev.filter((p) => p.agent_id !== agentId));
+                } catch (err) {
+                  console.error("Failed to delete agent:", err);
+                }
+              }}
+            />
           )}
         </div>
       )}
@@ -386,6 +385,8 @@ function TopLevelReplyForm({ postId, onCreated, onCancel }: TopLevelReplyFormPro
 
   const {
     uploading,
+    uploadedFiles,
+    removeFile,
     fileInputRef,
     handleFileSelect,
     handlePaste,
@@ -452,17 +453,20 @@ function TopLevelReplyForm({ postId, onCreated, onCancel }: TopLevelReplyFormPro
         <div className="flex items-center justify-center rounded-full shrink-0 w-9 h-9 bg-gray-100 dark:bg-surface-active">
           <User size={18} className="text-gray-400 dark:text-text-tertiary" />
         </div>
-        <textarea
-          ref={inputRef}
-          value={content}
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder="댓글 남기기..."
-          rows={1}
-          autoFocus
-          className="flex-1 min-h-9 max-h-40 px-0 py-2 text-sm bg-transparent text-gray-900 dark:text-text-primary placeholder:text-gray-400 dark:placeholder:text-text-tertiary focus:outline-none resize-none overflow-hidden"
-        />
+        <div className="flex-1 min-w-0">
+          <textarea
+            ref={inputRef}
+            value={content}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            placeholder="댓글 남기기..."
+            rows={1}
+            autoFocus
+            className="w-full min-h-9 max-h-40 px-0 py-2 text-sm bg-transparent text-gray-900 dark:text-text-primary placeholder:text-gray-400 dark:placeholder:text-text-tertiary focus:outline-none resize-none overflow-hidden"
+          />
+          <FilePreviewStrip files={uploadedFiles} onRemove={removeFile} />
+        </div>
         <input
           ref={fileInputRef}
           type="file"

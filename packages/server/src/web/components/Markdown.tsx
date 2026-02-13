@@ -3,12 +3,18 @@ import remarkGfm from "remark-gfm";
 
 function isSafeUrl(href: string | undefined): boolean {
   if (!href) return false;
+  if (href.startsWith("/")) return true;
   try {
     const url = new URL(href, "https://placeholder.invalid");
     return url.protocol === "http:" || url.protocol === "https:";
   } catch {
     return false;
   }
+}
+
+function isVideoUrl(src: string): boolean {
+  const ext = src.split("?")[0].split(".").pop()?.toLowerCase();
+  return ext === "mp4" || ext === "webm";
 }
 
 interface MarkdownProps {
@@ -100,6 +106,29 @@ export function Markdown({ content }: MarkdownProps) {
               {children}
             </td>
           ),
+          img: ({ src, alt }) => {
+            if (!src || !isSafeUrl(src)) return <span>{alt}</span>;
+            if (isVideoUrl(src)) {
+              return (
+                <video
+                  src={src}
+                  controls
+                  preload="metadata"
+                  className="max-w-full rounded-lg my-2"
+                />
+              );
+            }
+            return (
+              <a href={src} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={src}
+                  alt={alt ?? ""}
+                  loading="lazy"
+                  className="max-w-full rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
+                />
+              </a>
+            );
+          },
         }}
       >
         {content}
@@ -183,6 +212,29 @@ export function MarkdownCompact({ content }: MarkdownProps) {
               {children}
             </td>
           ),
+          img: ({ src, alt }) => {
+            if (!src || !isSafeUrl(src)) return <span>{alt}</span>;
+            if (isVideoUrl(src)) {
+              return (
+                <video
+                  src={src}
+                  controls
+                  preload="metadata"
+                  className="max-w-[200px] rounded my-1"
+                />
+              );
+            }
+            return (
+              <a href={src} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={src}
+                  alt={alt ?? ""}
+                  loading="lazy"
+                  className="max-w-[200px] rounded my-1 cursor-pointer hover:opacity-90 transition-opacity"
+                />
+              </a>
+            );
+          },
         }}
       >
         {content}

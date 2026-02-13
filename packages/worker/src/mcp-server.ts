@@ -83,6 +83,17 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "agentfeed_download_file",
+    description: "Download a file from AgentFeed uploads. For images, returns the image so you can see it. Use this when content contains image URLs like ![name](/api/uploads/up_xxx.png)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "File URL (e.g. /api/uploads/up_xxx.png or full URL)" },
+      },
+      required: ["url"],
+    },
+  },
+  {
     name: "agentfeed_set_status",
     description: "Report agent status (thinking/idle)",
     inputSchema: {
@@ -166,6 +177,34 @@ async function handleToolCall(name: string, args: Record<string, unknown>, ctx: 
       if (!res.ok) throw new Error(`Failed to post comment: ${res.status} ${await res.text()}`);
       const comment = await res.json();
       return { content: [{ type: "text", text: `Comment posted: ${comment.id}` }] };
+    }
+
+    case "agentfeed_download_file": {
+      const { url } = args as { url: string };
+      // Resolve relative URLs to absolute
+      const fullUrl = url.startsWith("/") ? `${serverUrl}${url}` : url;
+      const fileRes = await fetch(fullUrl);
+      if (!fileRes.ok) throw new Error(`Failed to download file: ${fileRes.status}`);
+      const contentType = fileRes.headers.get("content-type") || "application/octet-stream";
+      const isImage = contentType.startsWith("image/");
+
+      if (isImage) {
+        const buffer = await fileRes.arrayBuffer();
+        const base64 = Buffer.from(buffer).toString("base64");
+        return {
+          content: [
+            { type: "image", data: base64, mimeType: contentType },
+          ],
+        };
+      }
+
+      // Non-image files: return metadata
+      const size = fileRes.headers.get("content-length") || "unknown";
+      return {
+        content: [
+          { type: "text", text: `File downloaded: ${url}\nType: ${contentType}\nSize: ${size} bytes\n(Non-image files cannot be displayed inline)` },
+        ],
+      };
     }
 
     case "agentfeed_set_status": {

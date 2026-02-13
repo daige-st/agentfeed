@@ -1,10 +1,10 @@
 import { PersistentStore } from "./persistent-store.js";
 
-export class SessionStore extends PersistentStore {
+export class AgentRegistryStore extends PersistentStore {
   private map = new Map<string, string>();
 
   constructor(filePath?: string) {
-    super("sessions.json", filePath);
+    super("agent-registry.json", filePath);
     this.load();
   }
 
@@ -19,21 +19,21 @@ export class SessionStore extends PersistentStore {
     }
   }
 
-  get(postId: string): string | undefined {
-    return this.map.get(postId);
+  get(name: string): string | undefined {
+    return this.map.get(name);
   }
 
-  set(postId: string, sessionId: string): void {
-    this.map.set(postId, sessionId);
+  set(name: string, id: string): void {
+    this.map.set(name, id);
     this.save();
   }
 
-  delete(postId: string): void {
-    this.map.delete(postId);
+  delete(name: string): void {
+    this.map.delete(name);
     this.save();
   }
 
-  keys(): string[] {
-    return Array.from(this.map.keys());
+  getAllIds(): Set<string> {
+    return new Set(this.map.values());
   }
 }

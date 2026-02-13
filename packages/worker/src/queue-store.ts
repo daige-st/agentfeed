@@ -20,8 +20,10 @@ export class QueueStore extends PersistentStore {
   push(trigger: TriggerContext): void {
     // Deduplicate by eventId
     if (this.queue.some((t) => t.eventId === trigger.eventId)) return;
-    // Deduplicate by postId — keep only the latest trigger per post
-    this.queue = this.queue.filter((t) => t.postId !== trigger.postId);
+    // Deduplicate by (postId, backendType) — keep only the latest trigger per post per backend
+    this.queue = this.queue.filter(
+      (t) => !(t.postId === trigger.postId && t.backendType === trigger.backendType)
+    );
     this.queue.push(trigger);
     this.save();
   }

@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
-import { Send, Loader2 } from "lucide-react";
+import { Send, Loader2, Paperclip } from "lucide-react";
 import { api, type PostItem, type FeedItem, type FeedParticipant } from "../lib/api";
 import { autoResize } from "../lib/utils";
 import { PostCard } from "./PostCard";
-import { AgentChip } from "./AgentChip";
+import { AgentGroupList } from "./AgentChip";
 import { MentionPopup } from "./MentionPopup";
 import { useFeedStore } from "../store/useFeedStore";
 import { useFeedSSE } from "../hooks/useFeedSSE";
 import { useMention } from "../hooks/useMention";
+import { useFileUpload } from "../hooks/useFileUpload";
+import { FilePreviewStrip } from "./FilePreview";
 import { useActiveAgentsContext } from "../pages/Home";
 
 
@@ -153,25 +155,21 @@ export function FeedView({ feedId }: FeedViewProps) {
             onSave={handleUpdateName}
           />
           {participants.length > 0 && (
-            <div className="flex items-center gap-2 -mt-2 mb-2 flex-wrap">
-              {participants.map((agent) => {
-                const isOnline = onlineAgents.has(agent.agent_id);
-                const activeAgent = agentsByFeed.get(feedId)?.get(agent.agent_id);
-                const isTyping = !!activeAgent;
-                const canNavigate = isTyping && !!activeAgent.post_id;
-
-                return (
-                  <AgentChip
-                    key={agent.agent_id}
-                    name={agent.agent_name}
-                    isTyping={isTyping}
-                    isOnline={isOnline}
-                    disabled={!canNavigate}
-                    onClick={canNavigate ? () => navigate(`/thread/${activeAgent.post_id}`, { state: { scrollToComments: true } }) : undefined}
-                  />
-                );
-              })}
-            </div>
+            <AgentGroupList
+              participants={participants}
+              feedId={feedId}
+              onlineAgents={onlineAgents}
+              agentsByFeed={agentsByFeed}
+              onNavigate={(postId) => navigate(`/thread/${postId}`, { state: { scrollToComments: true } })}
+              onDelete={async (agentId) => {
+                try {
+                  await api.deleteAgent(agentId);
+                  setParticipants((prev) => prev.filter((p) => p.agent_id !== agentId));
+                } catch (err) {
+                  console.error("Failed to delete agent:", err);
+                }
+              }}
+            />
           )}
         </div>
       )}
@@ -295,6 +293,22 @@ function NewPostForm({
     onChange: setContent,
   });
 
+  const {
+    uploading,
+    uploadedFiles,
+    removeFile,
+    fileInputRef,
+    handleFileSelect,
+    handlePaste,
+    handleDragOver,
+    handleDrop,
+    openFilePicker,
+  } = useFileUpload({
+    textareaRef: contentRef,
+    value: content,
+    onChange: setContent,
+  });
+
   const handleSubmit = useCallback(async () => {
     const c = content.trim();
     if (!c || submitting) return;
@@ -349,7 +363,11 @@ function NewPostForm({
   }
 
   return (
-    <div className="-mx-4 md:-mx-6 p-6 border border-card-border rounded-3xl bg-card-bg shadow-md relative">
+    <div
+      className="-mx-4 md:-mx-6 p-6 border border-card-border rounded-3xl bg-card-bg shadow-md relative"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <MentionPopup
         mentionQuery={mentionQuery}
         filteredMentions={filteredMentions}
@@ -362,37 +380,56 @@ function NewPostForm({
         value={content}
         onChange={handleContentChange}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         placeholder="What do you want to say? (@ to mention)"
         rows={3}
         className="w-full text-base border-none outline-none bg-transparent text-gray-900 dark:text-text-primary placeholder:text-gray-400 dark:placeholder:text-text-tertiary resize-none overflow-hidden"
       />
-      <div className="flex justify-end gap-2 mt-3">
+      <FilePreviewStrip files={uploadedFiles} onRemove={removeFile} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        onChange={handleFileSelect}
+        className="hidden"
+      />
+      <div className="flex justify-between items-center mt-3">
         <button
           type="button"
-          onClick={() => {
-            setExpanded(false);
-            setContent("");
-          }}
-          className="px-3 h-8 text-sm rounded-lg text-gray-500 dark:text-text-secondary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer"
+          onClick={openFilePicker}
+          disabled={uploading}
+          className="p-2 rounded-lg text-gray-400 dark:text-text-tertiary hover:text-gray-600 dark:hover:text-text-primary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer disabled:opacity-40"
+          title="Attach file"
         >
-          Cancel
+          {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
         </button>
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={!content.trim() || submitting}
-          className="flex items-center gap-1.5 px-3 h-8 text-sm rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-        >
-          {submitting ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Send size={14} />
-          )}
-          Post
-          <kbd className="hidden sm:inline ml-1 text-[10px] opacity-60">
-            {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}↵
-          </kbd>
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setExpanded(false);
+              setContent("");
+            }}
+            className="px-3 h-8 text-sm rounded-lg text-gray-500 dark:text-text-secondary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={!content.trim() || submitting || uploading}
+            className="flex items-center gap-1.5 px-3 h-8 text-sm rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+          >
+            {submitting ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : (
+              <Send size={14} />
+            )}
+            Post
+            <kbd className="hidden sm:inline ml-1 text-[10px] opacity-60">
+              {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}↵
+            </kbd>
+          </button>
+        </div>
       </div>
     </div>
   );

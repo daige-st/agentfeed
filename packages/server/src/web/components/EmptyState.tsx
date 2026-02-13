@@ -1,54 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Settings, CheckCheck, Inbox, Eye } from "lucide-react";
-import { api, type FeedItem, type InboxItem, type ApiKeyItem, type AgentItem } from "../lib/api";
+import { api, type FeedItem, type InboxItem, type ApiKeyItem, type AgentItem, type FeedParticipant } from "../lib/api";
 import { PostCard } from "./PostCard";
-import { AgentChip } from "./AgentChip";
+import { AgentGroupList } from "./AgentChip";
 import { useActiveAgentsContext } from "../pages/Home";
 import { useFeedStore } from "../store/useFeedStore";
-
-function AgentList({ agents }: { agents: AgentItem[] }) {
-  const { agentsByFeed, onlineAgents, getAllActiveAgentIds } = useActiveAgentsContext();
-  const navigate = useNavigate();
-  const activeIds = getAllActiveAgentIds();
-
-  // Build a map: agentId -> { feedId, postId } (for navigation)
-  const agentFeedMap = new Map<string, { feedId: string; postId: string }>();
-  for (const [feedId, feedAgents] of agentsByFeed) {
-    for (const [agentId, agent] of feedAgents) {
-      agentFeedMap.set(agentId, { feedId, postId: agent.post_id });
-    }
-  }
-
-  if (agents.length === 0) return null;
-
-  return (
-    <div className="mb-8">
-      <h2 className="text-xs font-semibold text-gray-400 dark:text-text-tertiary uppercase tracking-wider pb-3">
-        Agents
-      </h2>
-      <div className="flex flex-wrap gap-2">
-        {agents.map((agent) => {
-          const isActive = activeIds.has(agent.id);
-          const isOnline = onlineAgents.has(agent.id);
-          const activeInfo = agentFeedMap.get(agent.id);
-          const canNavigate = isActive && !!activeInfo;
-
-          return (
-            <AgentChip
-              key={agent.id}
-              name={agent.name}
-              isTyping={isActive}
-              isOnline={isOnline}
-              disabled={!canNavigate}
-              onClick={canNavigate ? () => navigate(`/thread/${activeInfo.postId}`, { state: { scrollToComments: true } }) : undefined}
-            />
-          );
-        })}
-      </div>
-    </div>
-  );
-}
 
 export function EmptyState() {
   const [items, setItems] = useState<InboxItem[]>([]);
@@ -64,7 +21,7 @@ export function EmptyState() {
   const invalidateFeedList = useFeedStore((s) => s.invalidateFeedList);
   const navigate = useNavigate();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const { subscribeGlobalEvent } = useActiveAgentsContext();
+  const { subscribeGlobalEvent, onlineAgents, agentsByFeed } = useActiveAgentsContext();
 
   const loadInbox = useCallback(async (inboxMode: "unread" | "all") => {
     try {
@@ -180,7 +137,31 @@ export function EmptyState() {
   // Inbox view
   return (
     <div className="h-full flex flex-col pt-1 md:pt-24">
-      <AgentList agents={agents} />
+      {agents.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-xs font-semibold text-gray-400 dark:text-text-tertiary uppercase tracking-wider pb-3">
+            Agents
+          </h2>
+          <AgentGroupList
+            participants={agents.map((a): FeedParticipant => ({
+              agent_id: a.id,
+              agent_name: a.name,
+              agent_type: a.type,
+            }))}
+            onlineAgents={onlineAgents}
+            agentsByFeed={agentsByFeed}
+            onNavigate={(postId) => navigate(`/thread/${postId}`, { state: { scrollToComments: true } })}
+            onDelete={async (agentId) => {
+              try {
+                await api.deleteAgent(agentId);
+                setAgents((prev) => prev.filter((a) => a.id !== agentId));
+              } catch (err) {
+                console.error("Failed to delete agent:", err);
+              }
+            }}
+          />
+        </div>
+      )}
 
       {/* Inbox header */}
       <div className="flex items-center justify-between mb-4">

@@ -1,18 +1,27 @@
 import type { FollowStore } from "./follow-store.js";
 import type { PostSessionStore } from "./post-session-store.js";
-import type { GlobalEvent, TriggerContext, AgentInfo } from "./types.js";
+import type { GlobalEvent, TriggerContext, BackendAgent } from "./types.js";
 import { parseMention } from "./utils.js";
 
-export function detectTrigger(
+export function detectTriggers(
   event: GlobalEvent,
-  agent: AgentInfo,
+  backendAgents: BackendAgent[],
   followStore?: FollowStore,
-  postSessionStore?: PostSessionStore
-): TriggerContext | null {
+  postSessionStore?: PostSessionStore,
+  ownAgentIds?: Set<string>
+): TriggerContext[] {
+  const isOwnAgent = (id: string | null) =>
+    id !== null && (ownAgentIds ? ownAgentIds.has(id) : false);
+
+  const defaultBackendType = backendAgents[0]?.backendType ?? "claude";
+
   if (event.type === "comment_created") {
-    // Trigger 1: Comment on own post
-    if (event.post_created_by === agent.id) {
-      return {
+    const authorIsOwnBot = isOwnAgent(event.created_by);
+
+    // Trigger 1: Comment on own post (human-authored only — prevents bot loop)
+    if (!authorIsOwnBot && isOwnAgent(event.post_created_by)) {
+      const postSession = postSessionStore?.getWithType(event.post_id);
+      return [{
         triggerType: "own_post_comment",
         eventId: event.id,
         feedId: event.feed_id,
@@ -20,28 +29,36 @@ export function detectTrigger(
         postId: event.post_id,
         content: event.content,
         authorName: event.author_name,
-        sessionName: postSessionStore?.get(event.post_id) ?? "default",
-      };
+        sessionName: postSession?.sessionName ?? "default",
+        backendType: postSession?.backendType ?? defaultBackendType,
+      }];
     }
 
-    // Trigger 2: @mention in comment
-    const mention = parseMention(event.content, agent.name);
-    if (mention.mentioned) {
-      return {
-        triggerType: "mention",
-        eventId: event.id,
-        feedId: event.feed_id,
-        feedName: "",
-        postId: event.post_id,
-        content: event.content,
-        authorName: event.author_name,
-        sessionName: mention.sessionName,
-      };
+    // Trigger 2: @mention in comment — collect ALL matching agents
+    const mentions: TriggerContext[] = [];
+    for (const ba of backendAgents) {
+      if (event.created_by === ba.agent.id) continue; // skip self-mention
+      const mention = parseMention(event.content, ba.agent.name);
+      if (mention.mentioned) {
+        mentions.push({
+          triggerType: "mention",
+          eventId: `${event.id}:${ba.backendType}`,
+          feedId: event.feed_id,
+          feedName: "",
+          postId: event.post_id,
+          content: event.content,
+          authorName: event.author_name,
+          sessionName: mention.sessionName,
+          backendType: ba.backendType,
+        });
+      }
     }
+    if (mentions.length > 0) return mentions;
 
-    // Trigger 3: Comment in a followed thread
-    if (followStore?.has(event.post_id)) {
-      return {
+    // Trigger 3: Comment in a followed thread (human-authored only — prevents bot loop)
+    if (!authorIsOwnBot && followStore?.has(event.post_id)) {
+      const postSession = postSessionStore?.getWithType(event.post_id);
+      return [{
         triggerType: "thread_follow_up",
         eventId: event.id,
         feedId: event.feed_id,
@@ -49,29 +66,36 @@ export function detectTrigger(
         postId: event.post_id,
         content: event.content,
         authorName: event.author_name,
-        sessionName: postSessionStore?.get(event.post_id) ?? "default",
-      };
+        sessionName: postSession?.sessionName ?? "default",
+        backendType: postSession?.backendType ?? defaultBackendType,
+      }];
     }
   }
 
   if (event.type === "post_created") {
-    // @mention in post content
+    // @mention in post content — collect ALL matching agents
     if (event.content) {
-      const mention = parseMention(event.content, agent.name);
-      if (mention.mentioned) {
-        return {
-          triggerType: "mention",
-          eventId: event.id,
-          feedId: event.feed_id,
-          feedName: event.feed_name,
-          postId: event.id,
-          content: event.content,
-          authorName: event.author_name,
-          sessionName: mention.sessionName,
-        };
+      const mentions: TriggerContext[] = [];
+      for (const ba of backendAgents) {
+        if (event.created_by === ba.agent.id) continue;
+        const mention = parseMention(event.content, ba.agent.name);
+        if (mention.mentioned) {
+          mentions.push({
+            triggerType: "mention",
+            eventId: `${event.id}:${ba.backendType}`,
+            feedId: event.feed_id,
+            feedName: event.feed_name,
+            postId: event.id,
+            content: event.content,
+            authorName: event.author_name,
+            sessionName: mention.sessionName,
+            backendType: ba.backendType,
+          });
+        }
       }
+      if (mentions.length > 0) return mentions;
     }
   }
 
-  return null;
+  return [];
 }

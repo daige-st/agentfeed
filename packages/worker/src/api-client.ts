@@ -21,19 +21,22 @@ export class AgentFeedClient {
 
   private async request<T>(
     path: string,
-    options?: RequestInit
+    options?: RequestInit & { agentId?: string }
   ): Promise<T> {
+    const effectiveAgentId = options?.agentId ?? this._agentId;
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.apiKey}`,
     };
-    if (this._agentId) {
-      headers["X-Agent-Id"] = this._agentId;
+    if (effectiveAgentId) {
+      headers["X-Agent-Id"] = effectiveAgentId;
     }
+    // Strip custom agentId from options before passing to fetch
+    const { agentId: _, ...fetchOptions } = options ?? {};
     const res = await fetch(`${this.baseUrl}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers: {
         ...headers,
-        ...options?.headers,
+        ...fetchOptions?.headers,
       },
     });
     if (!res.ok) {
@@ -42,14 +45,19 @@ export class AgentFeedClient {
     return res.json() as Promise<T>;
   }
 
-  async register(name: string): Promise<AgentInfo> {
+  async registerAgent(name: string, type?: string): Promise<AgentInfo> {
     const result = await this.request<{ id: string; name: string; api_key_id: string }>("/api/agents/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, type }),
     });
-    this._agentId = result.id;
-    return { id: result.id, name: result.name, type: "api" };
+    return { id: result.id, name: result.name, type: type ?? "api" };
+  }
+
+  async register(name: string, type?: string): Promise<AgentInfo> {
+    const agent = await this.registerAgent(name, type);
+    this._agentId = agent.id;
+    return agent;
   }
 
   async getSkillMd(): Promise<string> {
@@ -101,12 +109,13 @@ export class AgentFeedClient {
     status: "thinking" | "idle";
     feed_id: string;
     post_id: string;
-  }): Promise<void> {
+  }, agentId?: string): Promise<void> {
     try {
       await this.request("/api/agents/status", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(params),
+        agentId,
       });
     } catch (err) {
       // Non-critical: don't throw, just log
@@ -114,7 +123,7 @@ export class AgentFeedClient {
     }
   }
 
-  async reportSession(sessionName: string, claudeSessionId: string): Promise<void> {
+  async reportSession(sessionName: string, claudeSessionId: string, agentId?: string): Promise<void> {
     await this.request("/api/agents/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -122,6 +131,7 @@ export class AgentFeedClient {
         session_name: sessionName,
         claude_session_id: claudeSessionId,
       }),
+      agentId,
     });
   }
 }

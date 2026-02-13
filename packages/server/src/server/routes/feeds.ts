@@ -162,23 +162,38 @@ feeds.get("/:id/participants", (c) => {
     "Feed not found"
   );
 
-  // Get distinct bot authors from posts and comments in this feed.
-  // Resolve af_xxx (API key) → ag_xxx (registered agent) via agents table.
+  // Get distinct bot authors from posts and comments in this feed,
+  // plus all session agents whose base agent is active in this feed.
   const rows = db
-    .query<{ agent_id: string; agent_name: string }, [string, string]>(
-      `SELECT
-        COALESCE(ag.id, sub.created_by) AS agent_id,
-        COALESCE(ag.name, sub.author_name) AS agent_name
-      FROM (
-        SELECT created_by, author_name FROM posts
-          WHERE feed_id = ? AND created_by IS NOT NULL AND (created_by LIKE 'af_%' OR created_by LIKE 'ag_%')
+    .query<{ agent_id: string; agent_name: string; agent_type: string | null }, [string, string]>(
+      `WITH content_authors AS (
+        SELECT
+          COALESCE(ag.id, sub.created_by) AS agent_id,
+          COALESCE(ag.name, sub.author_name) AS agent_name,
+          ag.type AS agent_type
+        FROM (
+          SELECT created_by, author_name FROM posts
+            WHERE feed_id = ?1 AND created_by IS NOT NULL AND (created_by LIKE 'af_%' OR created_by LIKE 'ag_%')
+          UNION
+          SELECT c.created_by, c.author_name FROM comments c
+            JOIN posts p ON c.post_id = p.id
+            WHERE p.feed_id = ?2 AND c.author_type = 'bot' AND c.created_by IS NOT NULL
+        ) sub
+        LEFT JOIN agents ag ON sub.created_by = ag.id OR sub.created_by = ag.api_key_id
+        GROUP BY COALESCE(ag.id, sub.created_by)
+      ),
+      active_base_names AS (
+        SELECT a.name AS base_name FROM agents a
+        WHERE a.id IN (SELECT agent_id FROM content_authors) AND a.parent_name IS NULL
         UNION
-        SELECT c.created_by, c.author_name FROM comments c
-          JOIN posts p ON c.post_id = p.id
-          WHERE p.feed_id = ? AND c.author_type = 'bot' AND c.created_by IS NOT NULL
-      ) sub
-      LEFT JOIN agents ag ON sub.created_by = ag.id OR sub.created_by = ag.api_key_id
-      GROUP BY COALESCE(ag.id, sub.created_by)`
+        SELECT a.parent_name AS base_name FROM agents a
+        WHERE a.id IN (SELECT agent_id FROM content_authors) AND a.parent_name IS NOT NULL
+      )
+      SELECT agent_id, agent_name, agent_type FROM content_authors
+      UNION
+      SELECT a.id, a.name, a.type FROM agents a
+      WHERE (a.parent_name IS NULL AND a.name IN (SELECT base_name FROM active_base_names))
+         OR (a.parent_name IN (SELECT base_name FROM active_base_names))`
     )
     .all(id, id);
 

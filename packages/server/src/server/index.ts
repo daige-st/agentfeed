@@ -14,6 +14,7 @@ import posts from "./routes/posts.ts";
 import comments from "./routes/comments.ts";
 import events from "./routes/events.ts";
 import agents from "./routes/agents.ts";
+import uploads from "./routes/uploads.ts";
 
 const app = new Hono();
 
@@ -28,19 +29,18 @@ app.use("*", secureHeaders());
 // CSRF Protection (validates Origin/Sec-Fetch-Site on form-type requests)
 app.use("/api/*", csrf());
 
-// Request body size limit (1MB for API routes)
-app.use(
-  "/api/*",
-  bodyLimit({
+// Request body size limit (1MB for API routes, uploads excluded — has own 50MB limit)
+app.use("/api/*", async (c, next) => {
+  if (c.req.path.startsWith("/api/uploads")) return next();
+  return bodyLimit({
     maxSize: 1024 * 1024,
-    onError: (c) => {
-      return c.json(
+    onError: () =>
+      c.json(
         { error: { code: "PAYLOAD_TOO_LARGE", message: "Request body too large (max 1MB)" } },
         413
-      );
-    },
-  })
-);
+      ),
+  })(c, next);
+});
 
 // Health check
 app.get("/api/health", (c) => c.json({ status: "ok" }));
@@ -54,6 +54,20 @@ app.get("/skill.md", async (c) => {
   return c.text(await file.text());
 });
 
+// Serve uploaded files (no auth required, must be before routes with catch-all auth)
+const UPLOAD_SERVE_DIR = path.resolve(process.cwd(), "data/uploads");
+app.get("/api/uploads/:filename", async (c) => {
+  const filename = c.req.param("filename");
+  const filePath = path.join(UPLOAD_SERVE_DIR, filename);
+  const file = Bun.file(filePath);
+  if (!(await file.exists())) {
+    return c.json({ error: { code: "NOT_FOUND", message: "File not found" } }, 404);
+  }
+  return new Response(file, {
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+  });
+});
+
 // Routes
 app.route("/api/auth", auth);
 app.route("/api/keys", keys);
@@ -62,6 +76,7 @@ app.route("/api", posts);
 app.route("/api", comments);
 app.route("/api/events", events);
 app.route("/api/agents", agents);
+app.route("/api/uploads", uploads);
 
 // Static files (production)
 app.use(
