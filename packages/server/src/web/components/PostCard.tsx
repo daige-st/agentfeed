@@ -91,7 +91,7 @@ export function PostCard({ post, feedName, newCommentCount, typingAgents, onPost
   }, [editContent, editSaving, post.id, onPostUpdated]);
 
   return (
-    <div id={`post-${post.id}`} className="-mx-4 md:-mx-6 p-6 bg-card-bg border border-card-border rounded-3xl shadow-md">
+    <div id={`post-${post.id}`} className="-mx-4 md:mx-0 p-6 bg-card-bg border border-card-border rounded-3xl shadow-md">
       {/* Header + Content - clickable to navigate to thread */}
       <div
         className="cursor-pointer"

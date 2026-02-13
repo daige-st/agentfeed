@@ -132,7 +132,7 @@ export function FeedView({ feedId }: FeedViewProps) {
           {[...Array(2)].map((_, i) => (
             <div
               key={i}
-              className="-mx-4 md:-mx-6 p-6 bg-card-bg border border-card-border rounded-3xl shadow-md animate-pulse"
+              className="-mx-4 md:mx-0 p-6 bg-card-bg border border-card-border rounded-3xl shadow-md animate-pulse"
             >
               <div className="h-3 w-20 bg-gray-100 dark:bg-surface-active rounded mb-3" />
               <div className="h-7 w-2/3 bg-gray-100 dark:bg-surface-active rounded mb-4" />
@@ -168,7 +168,7 @@ export function FeedView({ feedId }: FeedViewProps) {
 
       {/* Feed title */}
       {feed && (
-        <div className="pt-1 md:pt-24 mb-1 px-2 md:px-0">
+        <div className="pt-1 md:pt-24">
           <EditableTitle
             value={feed.name}
             onSave={handleUpdateName}
@@ -188,10 +188,12 @@ export function FeedView({ feedId }: FeedViewProps) {
 
       {/* New Post Form */}
       {feed && (
-        <NewPostForm
-          feedId={feed.id}
-          onCreated={(post) => setPosts((prev) => [post, ...prev])}
-        />
+        <div className="mt-4">
+          <NewPostForm
+            feedId={feed.id}
+            onCreated={(post) => setPosts((prev) => [post, ...prev])}
+          />
+        </div>
       )}
 
       {/* Posts */}
@@ -202,7 +204,7 @@ export function FeedView({ feedId }: FeedViewProps) {
           </p>
         </div>
       ) : (
-        <div className="mt-8 space-y-4">
+        <div className="mt-4 space-y-4">
           {posts.map((post) => (
               <PostCard
                 key={post.id}
@@ -272,7 +274,7 @@ function EditableTitle({
         }
       }}
       rows={1}
-      className="w-full text-3xl font-bold border-none outline-none bg-transparent px-0 py-0 mb-4 placeholder:text-gray-400 dark:placeholder:text-text-tertiary resize-none overflow-hidden text-gray-900 dark:text-text-primary"
+      className="w-full text-3xl font-bold border-none outline-none bg-transparent px-0 py-0 mb-2 placeholder:text-gray-400 dark:placeholder:text-text-tertiary resize-none overflow-hidden text-gray-900 dark:text-text-primary"
       placeholder="Untitled"
     />
   );
@@ -317,7 +319,7 @@ function NewPostForm({
           setExpanded(true);
           setTimeout(() => editorRef.current?.focus(), 0);
         }}
-        className="w-full -mx-4 md:-mx-6 px-6 py-4 text-left text-sm text-gray-400 dark:text-text-tertiary border border-dashed border-card-border rounded-3xl hover:border-accent hover:text-gray-600 dark:hover:text-text-secondary transition-colors cursor-pointer"
+        className="w-full -mx-4 md:mx-0 px-6 py-4 text-left text-sm text-gray-400 dark:text-text-tertiary border border-dashed border-card-border rounded-3xl hover:border-accent hover:text-gray-600 dark:hover:text-text-secondary transition-colors cursor-pointer"
       >
         Write a new post...
       </button>
@@ -333,7 +335,7 @@ function NewPostForm({
       placeholder="What do you want to say? (@ to mention)"
       rows={3}
       mentionPopupClassName="left-6 right-6"
-      className="-mx-4 md:-mx-6 p-6 border border-card-border rounded-3xl bg-card-bg shadow-md"
+      className="-mx-4 md:mx-0 p-6 border border-card-border rounded-3xl bg-card-bg shadow-md"
     >
       {({ uploading, openFilePicker }) => (
         <div className="flex justify-between items-center mt-3">

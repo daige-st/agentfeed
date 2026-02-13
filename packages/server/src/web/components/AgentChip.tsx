@@ -134,7 +134,7 @@ export function AgentGroupList({
   const groups = groupParticipants(participants);
 
   return (
-    <div className="flex items-start gap-2 -mt-2 mb-2 flex-wrap">
+    <div className="flex items-start gap-2 flex-wrap">
       {groups.map((group) => {
         const isGrouped = group.agents.length > 1;
 

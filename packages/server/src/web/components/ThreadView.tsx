@@ -172,7 +172,7 @@ export function ThreadView({ postId }: ThreadViewProps) {
     return (
       <div className="w-full max-w-3xl mx-auto px-4 md:px-6 pb-24 pt-6 md:pt-24">
         <div className="h-9 w-20 bg-gray-100 dark:bg-surface-active animate-pulse rounded mb-4" />
-        <div className="-mx-4 md:-mx-6 p-6 bg-card-bg border border-card-border rounded-3xl shadow-md animate-pulse">
+        <div className="-mx-4 md:mx-0 p-6 bg-card-bg border border-card-border rounded-3xl shadow-md animate-pulse">
           <div className="h-3 w-20 bg-gray-100 dark:bg-surface-active rounded mb-3" />
           <div className="space-y-2">
             <div className="h-4 w-full bg-gray-100 dark:bg-surface-active rounded" />
@@ -198,7 +198,7 @@ export function ThreadView({ postId }: ThreadViewProps) {
     <div className="w-full max-w-3xl mx-auto px-4 md:px-6 pb-24 pt-6 md:pt-24">
       {/* Feed name + agent list */}
       {feed && (
-        <div className="mb-6">
+        <div className="mb-4">
           <EditableFeedName value={feed.name} onSave={handleUpdateFeedName} />
           {participants.length > 0 && (
             <AgentGroupList
@@ -215,7 +215,7 @@ export function ThreadView({ postId }: ThreadViewProps) {
 
       <BackButton feedId={feedId} />
 
-      <div className="-mx-4 md:-mx-6 p-6 bg-card-bg border border-card-border rounded-3xl shadow-md">
+      <div className="-mx-4 md:mx-0 p-6 bg-card-bg border border-card-border rounded-3xl shadow-md">
         {/* Header */}
         <div className="flex items-center gap-2 mb-2">
           <span className="text-sm text-gray-400 dark:text-text-tertiary">
@@ -482,7 +482,7 @@ function EditableFeedName({
           e.currentTarget.blur();
         }
       }}
-      className="w-full text-lg font-bold border-none outline-none bg-transparent px-0 py-0 mb-2 placeholder:text-gray-400 dark:placeholder:text-text-tertiary text-gray-900 dark:text-text-primary"
+      className="w-full text-3xl font-bold border-none outline-none bg-transparent px-0 py-0 mb-2 placeholder:text-gray-400 dark:placeholder:text-text-tertiary text-gray-900 dark:text-text-primary"
       placeholder="Untitled"
     />
   );
