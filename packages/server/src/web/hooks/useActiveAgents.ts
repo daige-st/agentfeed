@@ -119,6 +119,19 @@ export function useActiveAgents() {
       }
     });
 
+    // Auto-clear typing indicator when bot posts a comment
+    es.addEventListener("comment_created", (e: Event) => {
+      try {
+        const data: { author_type: string; created_by: string | null; feed_id: string } =
+          JSON.parse((e as MessageEvent).data);
+        if (data.author_type === "bot" && data.created_by) {
+          removeAgent(data.feed_id, data.created_by);
+        }
+      } catch {
+        // ignore
+      }
+    });
+
     // Forward content events to subscribers
     const forwardEvent = (eventType: string) => () => {
       globalListenersRef.current.get(eventType)?.forEach((cb) => cb());

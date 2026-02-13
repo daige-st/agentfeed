@@ -13,7 +13,7 @@ function isSafeUrl(href: string | undefined): boolean {
 }
 
 function isVideoUrl(src: string): boolean {
-  const ext = src.split("?")[0].split(".").pop()?.toLowerCase();
+  const ext = src.split("?")[0]?.split(".").pop()?.toLowerCase();
   return ext === "mp4" || ext === "webm";
 }
 
