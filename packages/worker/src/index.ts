@@ -1,12 +1,8 @@
 import * as path from "node:path";
-import * as readline from "node:readline";
-import { execFileSync, spawn } from "node:child_process";
-import { existsSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { AgentFeedClient } from "./api-client.js";
 import { connectSSE } from "./sse-client.js";
 import { detectTriggers } from "./trigger.js";
-import { invokeAgent } from "./invoker.js";
 import { scanUnprocessed } from "./scanner.js";
 import { SessionStore } from "./session-store.js";
 import { FollowStore } from "./follow-store.js";
@@ -14,145 +10,17 @@ import { QueueStore } from "./queue-store.js";
 import { PostSessionStore } from "./post-session-store.js";
 import { AgentRegistryStore } from "./agent-registry-store.js";
 import { createBackend } from "./backends/index.js";
-import type { GlobalEvent, TriggerContext, PermissionMode, BackendType, BackendAgent } from "./types.js";
-
-const MAX_WAKE_ATTEMPTS = 3;
-const MAX_CRASH_RETRIES = 3;
-const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-const MAX_CONCURRENT = 5;
-const MAX_BOT_MENTIONS_PER_POST = 4;
-const ALL_BACKEND_TYPES: BackendType[] = ["claude", "codex", "gemini"];
-
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    console.error(`Required environment variable: ${name}`);
-    process.exit(1);
-  }
-  return value;
-}
-
-function parsePermissionMode(): PermissionMode {
-  const idx = process.argv.indexOf("--permission");
-  if (idx === -1) return "safe";
-
-  const value = process.argv[idx + 1];
-  if (value === "yolo") return "yolo";
-  if (value === "safe") return "safe";
-
-  console.error(`Unknown permission mode: "${value}". Use "safe" (default) or "yolo".`);
-  process.exit(1);
-}
-
-function parseAllowedTools(): string[] {
-  const tools: string[] = [];
-  for (let i = 0; i < process.argv.length; i++) {
-    if (process.argv[i] === "--allowed-tools") {
-      // Collect all following args until the next flag (starts with --)
-      for (let j = i + 1; j < process.argv.length; j++) {
-        if (process.argv[j]!.startsWith("--")) break;
-        tools.push(process.argv[j]!);
-      }
-      break;
-    }
-  }
-  return tools;
-}
-
-function detectInstalledBackends(): BackendType[] {
-  return ALL_BACKEND_TYPES.filter((type) => {
-    const backend = createBackend(type);
-    try {
-      execFileSync("which", [backend.binaryName], { stdio: "ignore" });
-      return true;
-    } catch {
-      return false;
-    }
-  });
-}
-
-const PROBE_TIMEOUT_MS = 10_000;
-
-function probeBackend(type: BackendType): Promise<boolean> {
-  const backend = createBackend(type);
-
-  // Minimal args to trigger auth check without heavy work
-  let args: string[];
-  switch (type) {
-    case "claude":
-      args = ["-p", "say ok", "--output-format", "stream-json", "--max-turns", "1"];
-      break;
-    case "gemini":
-      args = ["say ok", "--output-format", "stream-json"];
-      break;
-    case "codex":
-      args = ["exec", "--json", "--skip-git-repo-check", "--full-auto", "say ok"];
-      break;
-  }
-
-  const env = backend.buildEnv({
-    PATH: process.env.PATH ?? "",
-    HOME: process.env.HOME ?? "",
-    USER: process.env.USER ?? "",
-    SHELL: process.env.SHELL ?? "/bin/sh",
-    LANG: process.env.LANG ?? "en_US.UTF-8",
-    TERM: process.env.TERM ?? "xterm-256color",
-  });
-
-  return new Promise((resolve) => {
-    try {
-      const proc = spawn(backend.binaryName, args, { env, stdio: "pipe" });
-
-      const timer = setTimeout(() => {
-        // Still alive after timeout = authenticated (API call in progress)
-        proc.kill("SIGTERM");
-        resolve(true);
-      }, PROBE_TIMEOUT_MS);
-
-      proc.on("error", () => {
-        clearTimeout(timer);
-        resolve(false);
-      });
-
-      proc.on("close", (code) => {
-        clearTimeout(timer);
-        // Quick exit with 0 = completed ok, non-zero = auth/config failure
-        resolve(code === 0);
-      });
-    } catch {
-      resolve(false);
-    }
-  });
-}
-
-function confirmYolo(): Promise<boolean> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    console.log("");
-    console.log("  \x1b[33m⚠️  YOLO mode enabled. The agent can do literally anything.\x1b[0m");
-    console.log("  \x1b[33m   No prompt sandboxing. No trust boundaries.\x1b[0m");
-    console.log("  \x1b[33m   Prompt injection? Not your problem today.\x1b[0m");
-    console.log("");
-    rl.question("  Continue? (y/N): ", (answer) => {
-      rl.close();
-      resolve(answer.trim().toLowerCase() === "y");
-    });
-  });
-}
-
-function migrateSessionFile(backendType: BackendType): void {
-  const dir = path.join(homedir(), ".agentfeed");
-  const legacyPath = path.join(dir, "sessions.json");
-  const newPath = path.join(dir, `sessions-${backendType}.json`);
-  if (!existsSync(newPath) && existsSync(legacyPath)) {
-    try {
-      copyFileSync(legacyPath, newPath);
-      console.log(`Migrated sessions.json → sessions-${backendType}.json`);
-    } catch (err) {
-      console.warn(`Failed to migrate session file:`, err);
-    }
-  }
-}
+import { handleTriggers, type ProcessorDeps } from "./processor.js";
+import {
+  getRequiredEnv,
+  parsePermissionMode,
+  parseAllowedTools,
+  detectInstalledBackends,
+  probeBackend,
+  confirmYolo,
+  migrateSessionFile,
+} from "./cli.js";
+import type { GlobalEvent, BackendType, BackendAgent } from "./types.js";
 
 const serverUrl = getRequiredEnv("AGENTFEED_URL");
 const apiKey = getRequiredEnv("AGENTFEED_API_KEY");
@@ -163,15 +31,6 @@ const baseName = process.env.AGENTFEED_AGENT_NAME ?? path.basename(process.cwd()
 const client = new AgentFeedClient(serverUrl, apiKey);
 
 let sseConnection: ReturnType<typeof connectSSE> | null = null;
-const wakeAttempts = new Map<string, number>();
-const botMentionCounts = new Map<string, number>();
-const runningKeys = new Set<string>();
-
-function triggerKey(t: TriggerContext): string {
-  return `${t.backendType}:${t.sessionName}`;
-}
-// Periodic cleanup to prevent memory growth
-setInterval(() => { wakeAttempts.clear(); botMentionCounts.clear(); }, 10 * 60 * 1000);
 
 const followStore = new FollowStore(process.env.AGENTFEED_FOLLOW_FILE);
 const queueStore = new QueueStore(process.env.AGENTFEED_QUEUE_FILE);
@@ -215,6 +74,23 @@ async function ensureSessionAgent(sessionName: string, agentName: string, backen
   const sessionAgent = await client.registerAgent(fullName, backendType);
   agentRegistry.set(fullName, sessionAgent.id);
   return sessionAgent.id;
+}
+
+function getProcessorDeps(): ProcessorDeps {
+  return {
+    client,
+    apiKey,
+    serverUrl,
+    permissionMode,
+    extraAllowedTools,
+    backendAgentMap,
+    backendAgents,
+    followStore,
+    queueStore,
+    postSessionStore,
+    agentRegistry,
+    ensureSessionAgent,
+  };
 }
 
 async function main(): Promise<void> {
@@ -313,13 +189,15 @@ async function main(): Promise<void> {
     }
   }
 
+  const deps = getProcessorDeps();
+
   // Step 1: Startup scan for unprocessed items
   console.log("Scanning for unprocessed items...");
   const ownAgentIds = agentRegistry.getAllIds();
   const unprocessed = await scanUnprocessed(client, backendAgents, followStore, postSessionStore, ownAgentIds);
   if (unprocessed.length > 0) {
     console.log(`Found ${unprocessed.length} unprocessed item(s)`);
-    handleTriggers(unprocessed);
+    handleTriggers(unprocessed, deps);
   } else {
     console.log("No unprocessed items found.");
   }
@@ -358,7 +236,7 @@ async function main(): Promise<void> {
       const currentOwnIds = agentRegistry.getAllIds();
       const triggers = detectTriggers(event, backendAgents, followStore, postSessionStore, currentOwnIds);
       if (triggers.length > 0) {
-        handleTriggers(triggers);
+        handleTriggers(triggers, deps);
       }
     } catch (err) {
       console.error("Failed to parse event:", err);
@@ -368,174 +246,6 @@ async function main(): Promise<void> {
   });
 
   console.log("Worker ready. Listening for events...");
-}
-
-function handleTriggers(triggers: TriggerContext[]): void {
-  for (const t of triggers) {
-    // Prevent bot-to-bot mention loops
-    if (t.authorIsBot && t.triggerType === "mention") {
-      const count = botMentionCounts.get(t.postId) ?? 0;
-      if (count >= MAX_BOT_MENTIONS_PER_POST) {
-        console.log(`Skipping bot mention on ${t.postId}: loop limit (${MAX_BOT_MENTIONS_PER_POST}) reached`);
-        continue;
-      }
-      botMentionCounts.set(t.postId, count + 1);
-    }
-    queueStore.push(t);
-    console.log(`Queued trigger: ${t.triggerType} on ${t.postId} [${t.backendType}] (queue size: ${queueStore.size})`);
-  }
-  scheduleQueue();
-}
-
-function scheduleQueue(): void {
-  const queued = queueStore.drain();
-  if (queued.length === 0) return;
-
-  const toRun: TriggerContext[] = [];
-
-  for (const t of queued) {
-    const attempts = wakeAttempts.get(t.eventId) ?? 0;
-    if (attempts >= MAX_WAKE_ATTEMPTS) {
-      console.log(`Skipping ${t.eventId}: max wake attempts reached`);
-      continue;
-    }
-
-    const key = triggerKey(t);
-    if (runningKeys.size >= MAX_CONCURRENT || runningKeys.has(key)) {
-      // Same backend+session already running — re-queue
-      queueStore.push(t);
-    } else {
-      toRun.push(t);
-      runningKeys.add(key);
-    }
-  }
-
-  for (const trigger of toRun) {
-    processItem(trigger).catch((err) => {
-      console.error(`Error processing ${trigger.postId}:`, err);
-    });
-  }
-}
-
-async function processItem(trigger: TriggerContext): Promise<void> {
-  const key = triggerKey(trigger);
-  wakeAttempts.set(trigger.eventId, (wakeAttempts.get(trigger.eventId) ?? 0) + 1);
-
-  const ba = backendAgentMap.get(trigger.backendType);
-  if (!ba) {
-    console.warn(`No backend for ${trigger.backendType}, skipping`);
-    runningKeys.delete(key);
-    scheduleQueue();
-    return;
-  }
-
-  try {
-    // Auto-follow thread on mention
-    if (trigger.triggerType === "mention") {
-      followStore.add(trigger.postId);
-      console.log(`Following thread: ${trigger.postId}`);
-    }
-
-    const sessionAgentId = await ensureSessionAgent(trigger.sessionName, ba.agent.name, ba.backendType);
-    const recentContext = await fetchContext(trigger);
-
-    console.log(`Waking agent for: ${trigger.triggerType} on ${trigger.postId} [${trigger.backendType}] (session: ${trigger.sessionName}, agentId: ${sessionAgentId})`);
-
-    await client.setAgentStatus({
-      status: "thinking",
-      feed_id: trigger.feedId,
-      post_id: trigger.postId,
-    }, sessionAgentId);
-
-    // Server config overrides CLI args
-    const effectivePermission = ba.config?.permission_mode ?? permissionMode;
-    const effectiveTools = ba.config?.allowed_tools?.length
-      ? ba.config.allowed_tools
-      : extraAllowedTools;
-
-    let retries = 0;
-    let success = false;
-    try {
-      while (retries < MAX_CRASH_RETRIES) {
-        try {
-          const result = await invokeAgent(ba.backend, {
-            agent: ba.agent,
-            trigger,
-            apiKey,
-            serverUrl,
-            recentContext,
-            permissionMode: effectivePermission,
-            extraAllowedTools: effectiveTools,
-            sessionId: ba.sessionStore.get(trigger.sessionName),
-            agentId: sessionAgentId,
-            timeoutMs: AGENT_TIMEOUT_MS,
-          });
-
-          if (result.sessionId) {
-            ba.sessionStore.set(trigger.sessionName, result.sessionId);
-            postSessionStore.set(trigger.postId, trigger.backendType, trigger.sessionName);
-            await client.reportSession(trigger.sessionName, result.sessionId, sessionAgentId).catch((err) => {
-              console.warn("Failed to report session:", err);
-            });
-          }
-
-          if (result.exitCode === 0) {
-            success = true;
-            break;
-          }
-
-          if (result.exitCode !== 0 && ba.sessionStore.get(trigger.sessionName)) {
-            console.log("Session may be stale, clearing and retrying as new session...");
-            ba.sessionStore.delete(trigger.sessionName);
-          }
-
-          console.error(`Agent exited with code ${result.exitCode}, retry ${retries + 1}/${MAX_CRASH_RETRIES}`);
-        } catch (err) {
-          console.error("Agent invocation error:", err);
-        }
-        retries++;
-      }
-
-      if (!success) {
-        console.error(`Agent failed after ${MAX_CRASH_RETRIES} retries`);
-      }
-    } finally {
-      await client.setAgentStatus({
-        status: "idle",
-        feed_id: trigger.feedId,
-        post_id: trigger.postId,
-      }, sessionAgentId);
-    }
-  } finally {
-    runningKeys.delete(key);
-
-    // Post-completion: re-scan for items that arrived during execution
-    try {
-      const currentOwnIds = agentRegistry.getAllIds();
-      const newUnprocessed = await scanUnprocessed(client, backendAgents, followStore, postSessionStore, currentOwnIds);
-      for (const t of newUnprocessed) {
-        queueStore.push(t);
-      }
-      if (newUnprocessed.length > 0) {
-        console.log(`Post-completion scan: ${newUnprocessed.length} item(s) added to queue`);
-      }
-    } catch (err) {
-      console.error("Post-completion scan error:", err);
-    }
-
-    scheduleQueue();
-  }
-}
-
-async function fetchContext(trigger: TriggerContext): Promise<string> {
-  try {
-    const comments = await client.getPostComments(trigger.postId, { limit: 10 });
-    return comments.data
-      .map((c) => `[${c.author_type}${c.author_name ? ` (${c.author_name})` : ""}] ${c.content}`)
-      .join("\n");
-  } catch {
-    return "";
-  }
 }
 
 main().catch((err) => {

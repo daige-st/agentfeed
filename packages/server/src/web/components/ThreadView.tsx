@@ -1,18 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { ArrowLeft, Bot, User, MessageCircle, Copy, Check, Pencil, Trash2, Send, Loader2, Paperclip } from "lucide-react";
-import { AgentGroupList } from "./AgentChip";
+import { ArrowLeft, User, MessageCircle, Copy, Check, Pencil, Trash2, Send, Loader2, Paperclip } from "lucide-react";
+import { AgentGroupList, AgentIcon } from "./AgentChip";
 import { AgentDetailModal } from "./AgentDetailModal";
 import { useNavigate, useLocation } from "react-router";
 import { Markdown } from "./Markdown";
 import { CommentThreadGroup, buildCommentTree } from "./CommentThread";
-import { MentionPopup } from "./MentionPopup";
+import { ContentEditor } from "./ContentEditor";
 import { Modal, ModalHeader, ConfirmModal } from "./Modal";
 import { api } from "../lib/api";
-import type { PostItem, CommentItem, FeedItem, FeedParticipant } from "../lib/api";
-import { autoResize, formatTimeAgo } from "../lib/utils";
-import { useMention } from "../hooks/useMention";
-import { useFileUpload } from "../hooks/useFileUpload";
-import { FilePreviewStrip } from "./FilePreview";
+import type { PostItem, CommentItem, FeedItem, FeedParticipant, AgentItem } from "../lib/api";
+import { formatTimeAgo } from "../lib/utils";
 import { useFeedSSE } from "../hooks/useFeedSSE";
 import { useFeedStore } from "../store/useFeedStore";
 import { useActiveAgentsContext } from "../pages/Home";
@@ -51,13 +48,17 @@ export function ThreadView({ postId }: ThreadViewProps) {
       .then(async ([postData, commentData]) => {
         setPost(postData);
         setComments(commentData.data);
-        // Load feed info and participants
-        const [feedData, participantData] = await Promise.all([
+        // Load feed info and all agents
+        const [feedData, agentData] = await Promise.all([
           api.getFeed(postData.feed_id),
-          api.getFeedParticipants(postData.feed_id),
+          api.getAgents(),
         ]);
         setFeed(feedData);
-        setParticipants(participantData.data);
+        setParticipants(agentData.data.map((a: AgentItem): FeedParticipant => ({
+          agent_id: a.id,
+          agent_name: a.name,
+          agent_type: a.type,
+        })));
         // Mark post as viewed for inbox tracking
         api.markPostViewed(postId).catch(() => {});
       })
@@ -278,8 +279,8 @@ export function ThreadView({ postId }: ThreadViewProps) {
               <div className="py-3">
                 <div className="flex gap-3">
                   <div className="flex flex-col items-center shrink-0">
-                    <div className="flex items-center justify-center rounded-full shrink-0 w-9 h-9 bg-blue-100 dark:bg-blue-950/40">
-                      <Bot size={18} className="text-blue-500" />
+                    <div className="flex items-center justify-center rounded-full shrink-0 w-9 h-9 bg-white dark:bg-surface-active border border-card-border">
+                      <AgentIcon type={typingAgents[0]?.agent_type} isActive />
                     </div>
                   </div>
                   <div className="flex-1 min-w-0 pb-3">
@@ -379,36 +380,6 @@ interface TopLevelReplyFormProps {
 function TopLevelReplyForm({ postId, onCreated, onCancel }: TopLevelReplyFormProps) {
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  const {
-    mentionQuery,
-    mentionIndex,
-    filteredMentions,
-    detectMention,
-    handleMentionSelect,
-    handleMentionKeyDown,
-  } = useMention({
-    textareaRef: inputRef,
-    value: content,
-    onChange: setContent,
-  });
-
-  const {
-    uploading,
-    uploadedFiles,
-    removeFile,
-    fileInputRef,
-    handleFileSelect,
-    handlePaste,
-    handleDragOver,
-    handleDrop,
-    openFilePicker,
-  } = useFileUpload({
-    textareaRef: inputRef,
-    value: content,
-    onChange: setContent,
-  });
 
   const handleSubmit = useCallback(async () => {
     const text = content.trim();
@@ -426,85 +397,50 @@ function TopLevelReplyForm({ postId, onCreated, onCancel }: TopLevelReplyFormPro
     }
   }, [content, submitting, postId, onCreated]);
 
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setContent(e.target.value);
-      autoResize(e.target);
-      detectMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
-    },
-    [detectMention]
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        handleSubmit();
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onCancel();
-        return;
-      }
-      handleMentionKeyDown(e);
-    },
-    [handleSubmit, handleMentionKeyDown, onCancel]
-  );
-
   return (
-    <div className="mt-3 mb-4 relative" onDragOver={handleDragOver} onDrop={handleDrop}>
-      <MentionPopup
-        mentionQuery={mentionQuery}
-        filteredMentions={filteredMentions}
-        mentionIndex={mentionIndex}
-        onSelect={handleMentionSelect}
-      />
-      <div className="flex gap-2 items-end">
-        <div className="flex items-center justify-center rounded-full shrink-0 w-9 h-9 bg-gray-100 dark:bg-surface-active">
+    <div className="mt-3 mb-4">
+      <div className="flex gap-2">
+        <div className="flex items-center justify-center rounded-full shrink-0 w-9 h-9 bg-gray-100 dark:bg-surface-active mt-1">
           <User size={18} className="text-gray-400 dark:text-text-tertiary" />
         </div>
-        <div className="flex-1 min-w-0">
-          <textarea
-            ref={inputRef}
-            value={content}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder="댓글 남기기..."
-            rows={1}
-            autoFocus
-            className="w-full min-h-9 max-h-40 px-0 py-2 text-sm bg-transparent text-gray-900 dark:text-text-primary placeholder:text-gray-400 dark:placeholder:text-text-tertiary focus:outline-none resize-none overflow-hidden"
-          />
-          <FilePreviewStrip files={uploadedFiles} onRemove={removeFile} />
-        </div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          onChange={handleFileSelect}
-          className="hidden"
-        />
-        <button
-          type="button"
-          onClick={openFilePicker}
-          disabled={uploading}
-          className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg text-gray-400 dark:text-text-tertiary hover:text-gray-600 dark:hover:text-text-primary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer disabled:opacity-40"
-          title="Attach file"
+        <ContentEditor
+          value={content}
+          onChange={setContent}
+          onSubmit={handleSubmit}
+          onCancel={onCancel}
+          placeholder="댓글 남기기..."
+          rows={1}
+          autoFocus
+          textareaClassName="w-full min-h-9 max-h-40 px-0 py-2 text-sm bg-transparent text-gray-900 dark:text-text-primary placeholder:text-gray-400 dark:placeholder:text-text-tertiary focus:outline-none resize-none overflow-hidden"
+          className="flex-1 min-w-0"
         >
-          {uploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
-        </button>
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={!content.trim() || submitting || uploading}
-          className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-        >
-          {submitting ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <Send size={14} />
+          {({ uploading, openFilePicker }) => (
+            <div className="flex items-center gap-1 mt-1">
+              <button
+                type="button"
+                onClick={openFilePicker}
+                disabled={uploading}
+                className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg text-gray-400 dark:text-text-tertiary hover:text-gray-600 dark:hover:text-text-primary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer disabled:opacity-40"
+                title="Attach file"
+              >
+                {uploading ? <Loader2 size={14} className="animate-spin" /> : <Paperclip size={14} />}
+              </button>
+              <div className="flex-1" />
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!content.trim() || submitting || uploading}
+                className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                {submitting ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Send size={14} />
+                )}
+              </button>
+            </div>
           )}
-        </button>
+        </ContentEditor>
       </div>
     </div>
   );

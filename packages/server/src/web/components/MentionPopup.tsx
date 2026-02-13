@@ -1,8 +1,9 @@
-import { Bot } from "lucide-react";
+import { AgentIcon } from "./AgentChip";
 
 interface MentionOption {
   id: string;
   name: string;
+  type?: string | null;
 }
 
 interface MentionPopupProps {
@@ -40,7 +41,7 @@ export function MentionPopup({
               : "text-gray-700 dark:text-text-secondary hover:bg-interactive-hover"
           }`}
         >
-          <Bot size={14} className="shrink-0 text-blue-500" />
+          <AgentIcon type={key.type} isActive />
           <span className="truncate">{key.name}</span>
         </button>
       ))}

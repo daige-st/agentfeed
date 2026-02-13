@@ -1,17 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
 import { Send, Loader2, Paperclip } from "lucide-react";
-import { api, type PostItem, type FeedItem, type FeedParticipant } from "../lib/api";
+import { api, type PostItem, type FeedItem, type FeedParticipant, type AgentItem } from "../lib/api";
 import { autoResize } from "../lib/utils";
 import { PostCard } from "./PostCard";
 import { AgentGroupList } from "./AgentChip";
 import { AgentDetailModal } from "./AgentDetailModal";
-import { MentionPopup } from "./MentionPopup";
+import { ContentEditor, type ContentEditorHandle } from "./ContentEditor";
 import { useFeedStore } from "../store/useFeedStore";
 import { useFeedSSE } from "../hooks/useFeedSSE";
-import { useMention } from "../hooks/useMention";
-import { useFileUpload } from "../hooks/useFileUpload";
-import { FilePreviewStrip } from "./FilePreview";
 import { useActiveAgentsContext } from "../pages/Home";
 
 
@@ -72,11 +69,15 @@ export function FeedView({ feedId }: FeedViewProps) {
     setNextCursor(null);
     setHasMore(false);
 
-    Promise.all([api.getFeed(feedId), api.getPosts(feedId), api.getFeedParticipants(feedId)])
-      .then(([feedData, postData, participantData]) => {
+    Promise.all([api.getFeed(feedId), api.getPosts(feedId), api.getAgents()])
+      .then(([feedData, postData, agentData]) => {
         setFeed(feedData);
         setPosts(postData.data);
-        setParticipants(participantData.data);
+        setParticipants(agentData.data.map((a: AgentItem): FeedParticipant => ({
+          agent_id: a.id,
+          agent_name: a.name,
+          agent_type: a.type,
+        })));
         setNextCursor(postData.next_cursor);
         setHasMore(postData.has_more);
         api.markFeedViewed(feedId).then(() => invalidateFeedList()).catch(() => {});
@@ -167,7 +168,7 @@ export function FeedView({ feedId }: FeedViewProps) {
 
       {/* Feed title */}
       {feed && (
-        <div className="pt-1 md:pt-24 mb-1">
+        <div className="pt-1 md:pt-24 mb-1 px-2 md:px-0">
           <EditableTitle
             value={feed.name}
             onSave={handleUpdateName}
@@ -289,36 +290,7 @@ function NewPostForm({
   const [expanded, setExpanded] = useState(false);
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const contentRef = useRef<HTMLTextAreaElement>(null);
-
-  const {
-    mentionQuery,
-    mentionIndex,
-    filteredMentions,
-    detectMention,
-    handleMentionSelect,
-    handleMentionKeyDown,
-  } = useMention({
-    textareaRef: contentRef,
-    value: content,
-    onChange: setContent,
-  });
-
-  const {
-    uploading,
-    uploadedFiles,
-    removeFile,
-    fileInputRef,
-    handleFileSelect,
-    handlePaste,
-    handleDragOver,
-    handleDrop,
-    openFilePicker,
-  } = useFileUpload({
-    textareaRef: contentRef,
-    value: content,
-    onChange: setContent,
-  });
+  const editorRef = useRef<ContentEditorHandle>(null);
 
   const handleSubmit = useCallback(async () => {
     const c = content.trim();
@@ -337,34 +309,13 @@ function NewPostForm({
     }
   }, [feedId, content, submitting, onCreated]);
 
-  const handleContentChange = useCallback(
-    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setContent(e.target.value);
-      autoResize(e.target);
-      detectMention(e.target.value, e.target.selectionStart ?? e.target.value.length);
-    },
-    [detectMention]
-  );
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-        e.preventDefault();
-        handleSubmit();
-        return;
-      }
-      handleMentionKeyDown(e);
-    },
-    [handleSubmit, handleMentionKeyDown]
-  );
-
   if (!expanded) {
     return (
       <button
         type="button"
         onClick={() => {
           setExpanded(true);
-          setTimeout(() => contentRef.current?.focus(), 0);
+          setTimeout(() => editorRef.current?.focus(), 0);
         }}
         className="w-full -mx-4 md:-mx-6 px-6 py-4 text-left text-sm text-gray-400 dark:text-text-tertiary border border-dashed border-card-border rounded-3xl hover:border-accent hover:text-gray-600 dark:hover:text-text-secondary transition-colors cursor-pointer"
       >
@@ -374,74 +325,57 @@ function NewPostForm({
   }
 
   return (
-    <div
-      className="-mx-4 md:-mx-6 p-6 border border-card-border rounded-3xl bg-card-bg shadow-md relative"
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
+    <ContentEditor
+      ref={editorRef}
+      value={content}
+      onChange={setContent}
+      onSubmit={handleSubmit}
+      placeholder="What do you want to say? (@ to mention)"
+      rows={3}
+      mentionPopupClassName="left-6 right-6"
+      className="-mx-4 md:-mx-6 p-6 border border-card-border rounded-3xl bg-card-bg shadow-md"
     >
-      <MentionPopup
-        mentionQuery={mentionQuery}
-        filteredMentions={filteredMentions}
-        mentionIndex={mentionIndex}
-        onSelect={handleMentionSelect}
-        className="left-6 right-6"
-      />
-      <textarea
-        ref={contentRef}
-        value={content}
-        onChange={handleContentChange}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        placeholder="What do you want to say? (@ to mention)"
-        rows={3}
-        className="w-full text-base border-none outline-none bg-transparent text-gray-900 dark:text-text-primary placeholder:text-gray-400 dark:placeholder:text-text-tertiary resize-none overflow-hidden"
-      />
-      <FilePreviewStrip files={uploadedFiles} onRemove={removeFile} />
-      <input
-        ref={fileInputRef}
-        type="file"
-        onChange={handleFileSelect}
-        className="hidden"
-      />
-      <div className="flex justify-between items-center mt-3">
-        <button
-          type="button"
-          onClick={openFilePicker}
-          disabled={uploading}
-          className="p-2 rounded-lg text-gray-400 dark:text-text-tertiary hover:text-gray-600 dark:hover:text-text-primary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer disabled:opacity-40"
-          title="Attach file"
-        >
-          {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
-        </button>
-        <div className="flex gap-2">
+      {({ uploading, openFilePicker }) => (
+        <div className="flex justify-between items-center mt-3">
           <button
             type="button"
-            onClick={() => {
-              setExpanded(false);
-              setContent("");
-            }}
-            className="px-3 h-8 text-sm rounded-lg text-gray-500 dark:text-text-secondary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer"
+            onClick={openFilePicker}
+            disabled={uploading}
+            className="p-2 rounded-lg text-gray-400 dark:text-text-tertiary hover:text-gray-600 dark:hover:text-text-primary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer disabled:opacity-40"
+            title="Attach file"
           >
-            Cancel
+            {uploading ? <Loader2 size={16} className="animate-spin" /> : <Paperclip size={16} />}
           </button>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={!content.trim() || submitting || uploading}
-            className="flex items-center gap-1.5 px-3 h-8 text-sm rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-          >
-            {submitting ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Send size={14} />
-            )}
-            Post
-            <kbd className="hidden sm:inline ml-1 text-[10px] opacity-60">
-              {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}↵
-            </kbd>
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setExpanded(false);
+                setContent("");
+              }}
+              className="px-3 h-8 text-sm rounded-lg text-gray-500 dark:text-text-secondary hover:bg-gray-100 dark:hover:bg-interactive-hover transition-colors cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!content.trim() || submitting || uploading}
+              className="flex items-center gap-1.5 px-3 h-8 text-sm rounded-lg bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              {submitting ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Send size={14} />
+              )}
+              Post
+              <kbd className="hidden sm:inline ml-1 text-[10px] opacity-60">
+                {navigator.platform?.includes("Mac") ? "⌘" : "Ctrl"}↵
+              </kbd>
+            </button>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </ContentEditor>
   );
 }

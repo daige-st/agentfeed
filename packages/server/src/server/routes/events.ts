@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { getCookie } from "hono/cookie";
 import { apiOrSessionAuth } from "../middleware/apiOrSession.ts";
-import { onGlobalEvent, registerAgentOnline, type GlobalPostEvent, type GlobalCommentEvent } from "../utils/events.ts";
+import { onGlobalEvent, registerAgentOnline, type GlobalPostEvent, type GlobalCommentEvent } from "../utils/events/index.ts";
 import { isAuthValid } from "../utils/auth.ts";
 import { isBotAuthor } from "../utils/id.ts";
 import { getDb } from "../db.ts";

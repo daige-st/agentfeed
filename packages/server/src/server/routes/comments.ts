@@ -9,6 +9,7 @@ import {
   validateContent,
   normalizeTimestamp,
   validateAuthorType,
+  paginateRows,
 } from "../utils/validation.ts";
 import { apiOrSessionAuth } from "../middleware/apiOrSession.ts";
 import { rateLimit } from "../utils/rateLimit.ts";
@@ -19,7 +20,7 @@ import {
   emitGlobalEvent,
   onFeedAgentStatus,
   getAgentStatuses,
-} from "../utils/events.ts";
+} from "../utils/events/index.ts";
 import type { AppEnv } from "../types.ts";
 
 const comments = new Hono<AppEnv>();
@@ -35,12 +36,16 @@ interface CommentRow {
   author_type: "human" | "bot";
   created_by: string | null;
   author_name: string | null;
+  agent_type: string | null;
   created_at: string;
 }
 
 interface FeedCommentRow extends CommentRow {
   post_created_by: string | null;
 }
+
+// Query with agent_type JOIN for PATCH returning
+const COMMENT_WITH_AGENT = `SELECT c.*, ag.type AS agent_type FROM comments c LEFT JOIN agents ag ON c.created_by = ag.id`;
 
 // POST /api/posts/:postId/comments
 comments.post("/posts/:postId/comments", createRateLimit, async (c) => {
@@ -62,11 +67,15 @@ comments.post("/posts/:postId/comments", createRateLimit, async (c) => {
   const createdBy = (c.get("authId") as string | undefined) ?? null;
   const authorName = (c.get("authName") as string | undefined) ?? null;
 
+  db.query(
+    "INSERT INTO comments (id, post_id, content, author_type, created_by, author_name) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(id, postId, content, authorType, createdBy, authorName);
+
   const comment = db
-    .query<CommentRow, [string, string, string, string, string | null, string | null]>(
-      "INSERT INTO comments (id, post_id, content, author_type, created_by, author_name) VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
+    .query<CommentRow, [string]>(
+      `SELECT c.*, ag.type AS agent_type FROM comments c LEFT JOIN agents ag ON c.created_by = ag.id WHERE c.id = ?`
     )
-    .get(id, postId, content, authorType, createdBy, authorName);
+    .get(id);
 
   if (comment) {
     emitFeedComment(post.feed_id, comment);
@@ -124,13 +133,6 @@ function buildCommentFilters(query: {
   return { conditions, params };
 }
 
-function paginateRows<T extends { id: string }>(rows: T[], limit: number) {
-  const hasMore = rows.length > limit;
-  const data = hasMore ? rows.slice(0, limit) : rows;
-  const nextCursor = hasMore ? data[data.length - 1]!.id : null;
-  return { data, next_cursor: nextCursor, has_more: hasMore };
-}
-
 // GET /api/posts/:postId/comments
 comments.get("/posts/:postId/comments", (c) => {
   const { postId } = c.req.param();
@@ -146,17 +148,18 @@ comments.get("/posts/:postId/comments", (c) => {
     cursor: c.req.query("cursor"),
     since: c.req.query("since"),
     authorType: c.req.query("author_type"),
+    columnPrefix: "c",
   });
 
-  const conditions = ["post_id = ?", ...filters.conditions];
+  const conditions = ["c.post_id = ?", ...filters.conditions];
   const params = [postId, ...filters.params, limit + 1];
   const where = conditions.join(" AND ");
 
   const rows = db.query<CommentRow, (string | number)[]>(
-    `SELECT * FROM comments WHERE ${where} ORDER BY created_at ASC LIMIT ?`
+    `SELECT c.*, ag.type AS agent_type FROM comments c LEFT JOIN agents ag ON c.created_by = ag.id WHERE ${where} ORDER BY c.created_at ASC LIMIT ?`
   ).all(...params);
 
-  return c.json(paginateRows(rows, limit));
+  return c.json(paginateRows(rows, limit, (r) => r.id));
 });
 
 // GET /api/feeds/:feedId/comments
@@ -183,15 +186,16 @@ comments.get("/feeds/:feedId/comments", (c) => {
 
   const rows = db.query<FeedCommentRow, (string | number)[]>(`
     SELECT c.id, c.post_id, c.content, c.author_type, c.created_by, c.author_name,
-           c.created_at, p.created_by AS post_created_by
+           c.created_at, ag.type AS agent_type, p.created_by AS post_created_by
     FROM comments c
     JOIN posts p ON c.post_id = p.id
+    LEFT JOIN agents ag ON c.created_by = ag.id
     WHERE ${where}
     ORDER BY c.created_at ASC
     LIMIT ?
   `).all(...params);
 
-  return c.json(paginateRows(rows, limit));
+  return c.json(paginateRows(rows, limit, (r) => r.id));
 });
 
 // GET /api/feeds/:feedId/comments/stream (SSE)
@@ -305,9 +309,11 @@ comments.patch("/comments/:id", async (c) => {
   const body = await c.req.json<{ content?: string }>();
   const content = validateContent(body.content);
 
+  db.query("UPDATE comments SET content = ? WHERE id = ?").run(content, id);
+
   const updated = db
-    .query<CommentRow, [string, string]>("UPDATE comments SET content = ? WHERE id = ? RETURNING *")
-    .get(content, id);
+    .query<CommentRow, [string]>(`${COMMENT_WITH_AGENT} WHERE c.id = ?`)
+    .get(id);
   return c.json(updated);
 });
 

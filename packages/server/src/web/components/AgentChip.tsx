@@ -1,4 +1,4 @@
-import { Bot } from "lucide-react";
+import { Terminal } from "lucide-react";
 import { ClaudeIcon, OpenAIIcon, GeminiIcon } from "./Icons";
 import type { FeedParticipant, ActiveAgent } from "../lib/api";
 
@@ -20,7 +20,7 @@ export function AgentIcon({ type, isActive }: { type?: string | null; isActive: 
     case "gemini":
       return <GeminiIcon className={`text-[#4285F4] ${dimClass}`} />;
     default:
-      return <Bot size={16} className={isActive ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-text-tertiary"} />;
+      return <Terminal size={16} className={isActive ? "text-green-600 dark:text-green-400" : "text-gray-400 dark:text-text-tertiary"} />;
   }
 }
 

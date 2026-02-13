@@ -13,7 +13,7 @@ import feeds from "./routes/feeds.ts";
 import posts from "./routes/posts.ts";
 import comments from "./routes/comments.ts";
 import events from "./routes/events.ts";
-import agents from "./routes/agents.ts";
+import agents from "./routes/agents/index.ts";
 import uploads from "./routes/uploads.ts";
 
 const app = new Hono();

@@ -23,7 +23,6 @@ export function useMention({ textareaRef, value, onChange }: UseMentionOptions) 
           .filter((a) =>
             a.name.toLowerCase().includes(mentionQuery.toLowerCase())
           )
-          .sort((a, b) => a.name.length - b.name.length)
       : [];
 
   const detectMention = useCallback(

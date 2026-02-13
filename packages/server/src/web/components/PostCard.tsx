@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router";
-import { Copy, Check, Trash2, Pencil, Bot, User, MessageCircle } from "lucide-react";
+import { Copy, Check, Trash2, Pencil, User, MessageCircle } from "lucide-react";
+import { AgentIcon } from "./AgentChip";
 import { Markdown } from "./Markdown";
 import { Modal, ModalHeader, ConfirmModal } from "./Modal";
 import { api } from "../lib/api";
@@ -9,6 +10,7 @@ import { formatTimeAgo } from "../lib/utils";
 
 interface TypingAgent {
   agent_name: string;
+  agent_type?: string | null;
 }
 
 interface PostCardProps {
@@ -23,13 +25,18 @@ interface PostCardProps {
 interface ParsedCommenter {
   name: string;
   type: "bot" | "human";
+  agent_type: string | null;
 }
 
 function parseRecentCommenters(raw: string | null): ParsedCommenter[] {
   if (!raw) return [];
   return raw.split("|").map((entry) => {
-    const [name, type] = entry.split(":");
-    return { name: name ?? "Unknown", type: (type as "bot" | "human") ?? "human" };
+    const [name, type, agentType] = entry.split(":");
+    return {
+      name: name ?? "Unknown",
+      type: (type as "bot" | "human") ?? "human",
+      agent_type: agentType || null,
+    };
   });
 }
 
@@ -93,11 +100,11 @@ export function PostCard({ post, feedName, newCommentCount, typingAgents, onPost
         <div className="flex items-center gap-3 mb-3">
           <div className={`flex items-center justify-center rounded-full shrink-0 w-9 h-9 ${
             post.author_type === "bot"
-              ? "bg-blue-100 dark:bg-blue-950/40"
+              ? "bg-white dark:bg-surface-active border border-card-border"
               : "bg-gray-100 dark:bg-surface-active"
           }`}>
             {post.author_type === "bot" ? (
-              <Bot size={18} className="text-blue-500" />
+              <AgentIcon type={post.agent_type} isActive />
             ) : (
               <User size={18} className="text-gray-400 dark:text-text-tertiary" />
             )}
@@ -133,10 +140,10 @@ export function PostCard({ post, feedName, newCommentCount, typingAgents, onPost
               {commenters.map((commenter, i) => (
                 <span
                   key={i}
-                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-surface-secondary border border-card-border"
+                  className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white dark:bg-surface-active border border-card-border"
                 >
                   {commenter.type === "bot" ? (
-                    <Bot size={12} className="text-blue-500" />
+                    <AgentIcon type={commenter.agent_type} isActive />
                   ) : (
                     <User size={12} className="text-gray-400 dark:text-text-tertiary" />
                   )}
@@ -180,8 +187,8 @@ export function PostCard({ post, feedName, newCommentCount, typingAgents, onPost
       {/* Typing ghost comment */}
       {typingAgents && typingAgents.length > 0 && (
         <div id={`typing-${post.id}`} className="mt-3 flex gap-3">
-          <div className="flex items-center justify-center rounded-full shrink-0 w-9 h-9 bg-blue-100 dark:bg-blue-950/40">
-            <Bot size={18} className="text-blue-500" />
+          <div className="flex items-center justify-center rounded-full shrink-0 w-9 h-9 bg-white dark:bg-surface-active border border-card-border">
+            <AgentIcon type={typingAgents[0]?.agent_type} isActive />
           </div>
           <div className="flex-1 min-w-0 py-1">
             <span className="text-sm font-semibold text-gray-900 dark:text-text-primary">

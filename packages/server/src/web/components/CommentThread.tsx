@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
-import { Bot, User, Trash2, Send, Loader2, Copy, Check, Pencil, MessageCircle } from "lucide-react";
+import { User, Trash2, Send, Loader2, Copy, Check, Pencil, MessageCircle } from "lucide-react";
+import { AgentIcon } from "./AgentChip";
 import { MarkdownCompact } from "./Markdown";
 import { api } from "../lib/api";
 import { autoResize, formatTimeAgo } from "../lib/utils";
@@ -239,13 +240,13 @@ function InlineEditForm({ comment, onSaved, onCancel }: InlineEditFormProps) {
 
 function Avatar({ comment }: { comment: CommentItem }) {
   const bg = comment.author_type === "bot"
-    ? "bg-blue-100 dark:bg-blue-950/40"
+    ? "bg-white dark:bg-surface-active border border-card-border"
     : "bg-gray-100 dark:bg-surface-active";
 
   return (
     <div className={`flex items-center justify-center rounded-full shrink-0 w-9 h-9 ${bg}`}>
       {comment.author_type === "bot" ? (
-        <Bot size={18} className="text-blue-500" />
+        <AgentIcon type={comment.agent_type} isActive />
       ) : (
         <User size={18} className="text-gray-400 dark:text-text-tertiary" />
       )}

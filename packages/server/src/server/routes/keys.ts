@@ -2,8 +2,7 @@ import { Hono } from "hono";
 import { getDb } from "../db.ts";
 import { generateId } from "../utils/id.ts";
 import { hashApiKey } from "../utils/hash.ts";
-import { badRequest } from "../utils/error.ts";
-import { assertExists } from "../utils/validation.ts";
+import { assertExists, validateName } from "../utils/validation.ts";
 import { sessionAuth } from "../middleware/session.ts";
 import { nanoid } from "nanoid";
 import type { AppEnv } from "../types.ts";
@@ -23,13 +22,7 @@ interface ApiKeyRow {
 keys.post("/", async (c) => {
   const body = await c.req.json<{ name: string }>();
 
-  if (!body.name?.trim()) {
-    throw badRequest("Name is required");
-  }
-
-  if (body.name.trim().length > 100) {
-    throw badRequest("API key name must be 100 characters or less");
-  }
+  const name = validateName(body.name, "API key name");
 
   const id = generateId("apiKey");
   const rawKey = `af_${nanoid(40)}`;
@@ -39,9 +32,9 @@ keys.post("/", async (c) => {
   const db = getDb();
   db.query(
     "INSERT INTO api_keys (id, name, key_hash, key_prefix) VALUES (?, ?, ?, ?)"
-  ).run(id, body.name.trim(), keyHash, keyPrefix);
+  ).run(id, name, keyHash, keyPrefix);
 
-  return c.json({ id, name: body.name.trim(), key: rawKey, key_prefix: keyPrefix }, 201);
+  return c.json({ id, name, key: rawKey, key_prefix: keyPrefix }, 201);
 });
 
 // GET /api/keys

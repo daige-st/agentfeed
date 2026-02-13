@@ -304,6 +304,7 @@ export interface PostItem {
   author_type: "human" | "bot";
   created_by: string | null;
   author_name: string | null;
+  agent_type: string | null;
   comment_count: number;
   recent_commenters: string | null;
   created_at: string;
@@ -333,6 +334,7 @@ export interface CommentItem {
   author_type: "human" | "bot";
   created_by: string | null;
   author_name: string | null;
+  agent_type: string | null;
   created_at: string;
 }
 
@@ -342,6 +344,7 @@ export interface ActiveAgent {
   event: "agent_typing" | "agent_idle";
   agent_id: string;
   agent_name: string;
+  agent_type?: string | null;
   feed_id: string;
   post_id: string;
 }

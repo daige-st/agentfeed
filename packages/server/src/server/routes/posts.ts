@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import { getDb } from "../db.ts";
 import { generateId } from "../utils/id.ts";
-import { assertExists, validateContent } from "../utils/validation.ts";
+import { forbidden } from "../utils/error.ts";
+import { assertExists, validateContent, paginateRows } from "../utils/validation.ts";
 import { apiOrSessionAuth } from "../middleware/apiOrSession.ts";
 import { rateLimit } from "../utils/rateLimit.ts";
-import { emitGlobalEvent } from "../utils/events.ts";
+import { emitGlobalEvent } from "../utils/events/index.ts";
 import type { AppEnv } from "../types.ts";
 
 const posts = new Hono<AppEnv>();
@@ -20,6 +21,7 @@ interface PostRow {
   author_type: "human" | "bot";
   created_by: string | null;
   author_name: string | null;
+  agent_type: string | null;
   comment_count: number;
   recent_commenters: string | null;
   created_at: string;
@@ -32,15 +34,17 @@ const COMMENT_AGG = `LEFT JOIN (
 ) ca ON ca.post_id = p.id`;
 
 const RECENT_COMMENTERS = `(SELECT GROUP_CONCAT(info, '|') FROM (
-  SELECT DISTINCT COALESCE(author_name, CASE WHEN author_type='bot' THEN 'Bot' ELSE 'Admin' END) || ':' || author_type AS info
-  FROM comments WHERE post_id = p.id ORDER BY created_at DESC LIMIT 3
+  SELECT DISTINCT COALESCE(c2.author_name, CASE WHEN c2.author_type='bot' THEN 'Bot' ELSE 'Admin' END) || ':' || c2.author_type || ':' || COALESCE(ag2.type, '') AS info
+  FROM comments c2 LEFT JOIN agents ag2 ON c2.created_by = ag2.id WHERE c2.post_id = p.id ORDER BY c2.created_at DESC LIMIT 3
 ))`;
 
 const POST_WITH_COUNT = `SELECT p.*,
+  ag.type AS agent_type,
   COALESCE(ca.total_comments, 0) AS comment_count,
   ${RECENT_COMMENTERS} AS recent_commenters
 FROM posts p
-${COMMENT_AGG}`;
+${COMMENT_AGG}
+LEFT JOIN agents ag ON p.created_by = ag.id`;
 
 interface InboxRow extends PostRow {
   feed_name: string;
@@ -50,6 +54,7 @@ interface InboxRow extends PostRow {
 }
 
 const INBOX_SELECT = `SELECT p.*,
+  ag.type AS agent_type,
   COALESCE(ca.total_comments, 0) AS comment_count,
   ${RECENT_COMMENTERS} AS recent_commenters,
   f.name AS feed_name,
@@ -61,6 +66,7 @@ const INBOX_SELECT = `SELECT p.*,
   COALESCE(ca.latest_comment_at, p.created_at) AS latest_activity
 FROM posts p
 ${COMMENT_AGG}
+LEFT JOIN agents ag ON p.created_by = ag.id
 JOIN feeds f ON p.feed_id = f.id
 LEFT JOIN post_views pv ON p.id = pv.post_id`;
 
@@ -145,11 +151,7 @@ posts.get("/feeds/:feedId/posts", (c) => {
       .all(feedId, limit + 1);
   }
 
-  const hasMore = rows.length > limit;
-  const data = hasMore ? rows.slice(0, limit) : rows;
-  const nextCursor = hasMore ? data[data.length - 1]!.id : null;
-
-  return c.json({ data, next_cursor: nextCursor, has_more: hasMore });
+  return c.json(paginateRows(rows, limit, (r) => r.id));
 });
 
 // GET /api/posts/:id
@@ -254,11 +256,7 @@ posts.get("/inbox", (c) => {
     )
     .all(...params);
 
-  const hasMore = rows.length > limit;
-  const data = hasMore ? rows.slice(0, limit) : rows;
-  const nextCursor = hasMore ? data[data.length - 1]!.latest_activity : null;
-
-  return c.json({ data, next_cursor: nextCursor, has_more: hasMore });
+  return c.json(paginateRows(rows, limit, (r) => r.latest_activity));
 });
 
 // POST /api/inbox/mark-all-read

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { getDb } from "../db.ts";
 import { generateId } from "../utils/id.ts";
 import { badRequest, forbidden } from "../utils/error.ts";
-import { assertExists } from "../utils/validation.ts";
+import { assertExists, validateName } from "../utils/validation.ts";
 import { apiOrSessionAuth } from "../middleware/apiOrSession.ts";
 import type { AppEnv } from "../types.ts";
 
@@ -26,11 +26,7 @@ interface FeedWithUpdates extends FeedRow {
 feeds.post("/", async (c) => {
   const body = await c.req.json<{ name: string }>();
 
-  const name = body.name?.trim() || "Untitled";
-
-  if (name.length > 100) {
-    throw badRequest("Feed name must be 100 characters or less");
-  }
+  const name = validateName(body.name, "Feed name", { fallback: "Untitled" });
 
   const id = generateId("feed");
   const db = getDb();
@@ -137,11 +133,7 @@ feeds.patch("/:id", async (c) => {
     "Feed not found"
   );
 
-  const name = body.name?.trim() ?? existing.name;
-
-  if (name.length > 100) {
-    throw badRequest("Feed name must be 100 characters or less");
-  }
+  const name = validateName(body.name, "Feed name", { fallback: existing.name });
 
   const feed = db
     .query<FeedRow, [string, string]>(
