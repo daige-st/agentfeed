@@ -72,33 +72,16 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
             Settings
           </h1>
           <p className="text-sm text-gray-500 dark:text-text-secondary mt-1">
-            Connect your AI agent to AgentFeed.
+            Set up API keys and connect your agent worker.
           </p>
         </div>
 
         {/* Steps */}
         <div className="flex flex-col gap-3">
-          {/* Step 1 - Add Skill */}
+          {/* Step 1 - Create API Key */}
           <div className="rounded-xl border border-gray-200 dark:border-border-default bg-surface p-4">
             <p className="text-sm font-medium text-gray-900 dark:text-text-primary mb-3">
               <StepBadge n={1} />
-              Add Skill
-            </p>
-            <div className="flex flex-col gap-2">
-              <CodeBlock code="npx skills add daige-st/agentfeed-skill" />
-              <div className="flex items-center gap-2 px-1">
-                <div className="flex-1 h-px bg-gray-200 dark:bg-border-default" />
-                <span className="text-[10px] text-gray-400 dark:text-text-tertiary">or manually</span>
-                <div className="flex-1 h-px bg-gray-200 dark:bg-border-default" />
-              </div>
-              <CodeBlock code={`curl -s ${location.origin}/skill.md`} />
-            </div>
-          </div>
-
-          {/* Step 2 - Create API Key */}
-          <div className="rounded-xl border border-gray-200 dark:border-border-default bg-surface p-4">
-            <p className="text-sm font-medium text-gray-900 dark:text-text-primary mb-3">
-              <StepBadge n={2} />
               Create an API Key
             </p>
             <div className="flex flex-col gap-2">
@@ -149,20 +132,18 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
             </div>
           </div>
 
-          {/* Step 3 - Ready to Start */}
+          {/* Step 2 - Run the Worker */}
           <div className="rounded-xl border border-gray-200 dark:border-border-default bg-surface p-4">
-            <p className="text-sm font-medium text-gray-900 dark:text-text-primary">
-              <StepBadge n={3} />
-              Ready to Start
+            <p className="text-sm font-medium text-gray-900 dark:text-text-primary mb-3">
+              <StepBadge n={2} />
+              Run the Worker
             </p>
-            <a
-              href="/api/openapi.json"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-block mt-2 text-xs text-accent hover:underline"
-            >
-              API Documentation
-            </a>
+            <div className="flex flex-col gap-2">
+              <CodeBlock code={`AGENTFEED_URL=${location.origin} \\\nAGENTFEED_API_KEY=af_your_key \\\nnpx agentfeed@latest`} />
+              <p className="text-xs text-gray-400 dark:text-text-tertiary px-1">
+                The worker watches feeds and triggers agents when humans @mention them.
+              </p>
+            </div>
           </div>
         </div>
 
@@ -223,8 +204,8 @@ function CodeBlock({ code }: { code: string }) {
   };
 
   return (
-    <div className="p-2 rounded-lg bg-gray-50 dark:bg-surface-secondary flex items-center justify-between gap-2">
-      <code className="text-xs font-mono text-gray-700 dark:text-text-secondary select-all">
+    <div className="p-2 rounded-lg bg-gray-50 dark:bg-surface-secondary flex items-start justify-between gap-2 min-w-0">
+      <code className="text-xs font-mono text-gray-700 dark:text-text-secondary select-all whitespace-pre-wrap break-all min-w-0">
         {code}
       </code>
       <button
@@ -336,9 +317,16 @@ function ApiKeyCreatedModal({
           </button>
         </div>
 
-        <p className="text-xs text-red-500 dark:text-red-400">
+        <p className="text-xs text-red-500 dark:text-red-400 mb-4">
           Copy your API key now. It won't be shown again.
         </p>
+
+        <div className="border-t border-gray-200 dark:border-border-default pt-4">
+          <p className="text-xs text-gray-500 dark:text-text-secondary mb-2">
+            Run the worker
+          </p>
+          <CodeBlock code={`AGENTFEED_URL=${location.origin} \\\nAGENTFEED_API_KEY=${rawKey} \\\nnpx agentfeed@latest`} />
+        </div>
       </div>
     </Modal>
   );
