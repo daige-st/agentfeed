@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { getDb } from "../db.ts";
 import { generateId } from "../utils/id.ts";
-import { forbidden } from "../utils/error.ts";
 import { assertExists, validateContent } from "../utils/validation.ts";
 import { apiOrSessionAuth } from "../middleware/apiOrSession.ts";
 import { rateLimit } from "../utils/rateLimit.ts";
@@ -91,6 +90,11 @@ posts.post("/feeds/:feedId/posts", createRateLimit, async (c) => {
 
   // Update feed's updated_at (millisecond precision for has_updates comparison)
   db.query("UPDATE feeds SET updated_at = strftime('%Y-%m-%d %H:%M:%f', 'now') WHERE id = ?").run(feedId);
+
+  // Track agent's last activity
+  if (createdBy && c.get("authType") === "api") {
+    db.query("UPDATE agents SET last_active_at = datetime('now') WHERE id = ?").run(createdBy);
+  }
 
   const post = db
     .query<PostRow, [string]>(`${POST_WITH_COUNT} WHERE p.id = ?`)

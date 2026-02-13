@@ -19,7 +19,7 @@ const BACKOFF_RESET_AFTER_MS = 30_000;
 export function connectSSE(
   url: string,
   apiKey: string,
-  agentId: string | undefined,
+  agentIds: string[],
   onEvent: (event: SSEEvent) => void,
   onError: (error: Error) => void
 ): SSEConnection {
@@ -34,14 +34,19 @@ export function connectSSE(
   function connect() {
     if (closed) return;
 
-    const es = new EventSource(url, {
+    // Pass all agent IDs as query parameter for multi-agent online tracking
+    const connectUrl = new URL(url);
+    if (agentIds.length > 0) {
+      connectUrl.searchParams.set("agents", agentIds.join(","));
+    }
+
+    const es = new EventSource(connectUrl.toString(), {
       fetch: (input, init) =>
         fetch(input, {
           ...init,
           headers: {
             ...init.headers,
             Authorization: `Bearer ${apiKey}`,
-            ...(agentId ? { "X-Agent-Id": agentId } : {}),
           },
         }),
     });

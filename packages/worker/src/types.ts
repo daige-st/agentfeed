@@ -7,11 +7,17 @@ export interface AgentInfo {
   type: string;
 }
 
+export interface AgentConfig {
+  permission_mode: PermissionMode;
+  allowed_tools: string[];
+}
+
 export interface BackendAgent {
   backendType: BackendType;
   backend: CLIBackend;
   agent: AgentInfo;
   sessionStore: SessionStore;
+  config?: AgentConfig;
 }
 
 export interface GlobalPostEvent {

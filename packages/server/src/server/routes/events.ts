@@ -5,6 +5,7 @@ import { apiOrSessionAuth } from "../middleware/apiOrSession.ts";
 import { onGlobalEvent, registerAgentOnline, type GlobalPostEvent, type GlobalCommentEvent } from "../utils/events.ts";
 import { isAuthValid } from "../utils/auth.ts";
 import { isBotAuthor } from "../utils/id.ts";
+import { getDb } from "../db.ts";
 import type { AppEnv } from "../types.ts";
 
 const events = new Hono<AppEnv>();
@@ -52,15 +53,45 @@ events.get("/stream", apiOrSessionAuth, async (c) => {
 
   // Track bot connections (API key auth = bot) - MUST be before streamSSE to avoid timing issues
   const isBot = authType === "api";
-  let unregisterOnline: (() => void) | null = null;
-  if (isBot && authId && authName) {
-    try {
-      console.log(`[SSE] Registering agent online: authId=${authId}, authName=${authName}`);
-      unregisterOnline = registerAgentOnline(authId, authName);
-      console.log(`[SSE] Agent registered successfully`);
-    } catch (err) {
-      console.error(`[SSE] Failed to register agent online:`, err);
-      throw err;
+  const unregisterOnlineFns: (() => void)[] = [];
+
+  if (isBot && authId) {
+    const agentsParam = c.req.query("agents");
+
+    if (agentsParam) {
+      // Multi-agent mode: register all specified agents as online
+      const agentIds = agentsParam.split(",").filter(Boolean);
+      const db = getDb();
+      const apiKeyIdValue = apiKeyId as string;
+
+      for (const agId of agentIds) {
+        const agent = db
+          .query<{ id: string; name: string; api_key_id: string }, [string]>(
+            "SELECT id, name, api_key_id FROM agents WHERE id = ?"
+          )
+          .get(agId);
+
+        if (agent && agent.api_key_id === apiKeyIdValue) {
+          try {
+            unregisterOnlineFns.push(registerAgentOnline(agent.id, agent.name));
+            console.log(`[SSE] Registered agent online: ${agent.name} (${agent.id})`);
+          } catch (err) {
+            console.error(`[SSE] Failed to register agent ${agId} online:`, err);
+          }
+        } else {
+          console.warn(`[SSE] Agent ${agId} not found or not owned by key ${apiKeyIdValue}, skipping`);
+        }
+      }
+    } else if (authName) {
+      // Backward compatibility: single agent from X-Agent-Id header
+      try {
+        console.log(`[SSE] Registering agent online: authId=${authId}, authName=${authName}`);
+        unregisterOnlineFns.push(registerAgentOnline(authId, authName));
+        console.log(`[SSE] Agent registered successfully`);
+      } catch (err) {
+        console.error(`[SSE] Failed to register agent online:`, err);
+        throw err;
+      }
     }
   }
 
@@ -81,7 +112,7 @@ events.get("/stream", apiOrSessionAuth, async (c) => {
       console.log(`[SSE] Initial heartbeat sent successfully for authId=${authId}`);
     } catch (err) {
       console.log(`[SSE] Initial heartbeat failed for authId=${authId}:`, err);
-      if (unregisterOnline) unregisterOnline();
+      for (const fn of unregisterOnlineFns) fn();
       return;
     }
 
@@ -93,7 +124,7 @@ events.get("/stream", apiOrSessionAuth, async (c) => {
       console.log(`[SSE] Stream aborted for authId=${authId}`);
       aborted = true;
       if (unsubscribe) unsubscribe();
-      if (unregisterOnline) unregisterOnline();
+      for (const fn of unregisterOnlineFns) fn();
     });
 
     // Register global event listener
@@ -161,7 +192,7 @@ events.get("/stream", apiOrSessionAuth, async (c) => {
 
     console.log(`[SSE] Connection closing: authType=${authType}, authId=${authId}, aborted=${aborted}`);
     if (unsubscribe) unsubscribe();
-    if (unregisterOnline) unregisterOnline();
+    for (const fn of unregisterOnlineFns) fn();
   });
 });
 

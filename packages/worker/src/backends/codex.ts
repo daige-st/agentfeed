@@ -4,11 +4,14 @@ export class CodexBackend implements CLIBackend {
   readonly name = "codex" as const;
   readonly binaryName = "codex";
 
-  private mcpConfigValue = "";
+  private mcpCommand = "";
+  private mcpArgs: string[] = [];
+  private mcpEnv: Record<string, string> = {};
 
   setupMCP(env: Record<string, string>, mcpServerPath: string): void {
-    const mcpServer = { command: "node", args: [mcpServerPath], env };
-    this.mcpConfigValue = JSON.stringify(mcpServer);
+    this.mcpCommand = "node";
+    this.mcpArgs = [mcpServerPath];
+    this.mcpEnv = env;
   }
 
   buildArgs(options: BuildArgsOptions): string[] {
@@ -16,8 +19,13 @@ export class CodexBackend implements CLIBackend {
 
     const args: string[] = ["exec"];
 
-    // MCP config via -c flag
-    args.push("-c", `mcp_servers.agentfeed=${this.mcpConfigValue}`);
+    // MCP config via dot-notation -c flags (codex-cli 0.46+ requires struct, not JSON string)
+    const prefix = "mcp_servers.agentfeed";
+    args.push("-c", `${prefix}.command=${this.mcpCommand}`);
+    args.push("-c", `${prefix}.args=${JSON.stringify(this.mcpArgs)}`);
+    for (const [key, value] of Object.entries(this.mcpEnv)) {
+      args.push("-c", `${prefix}.env.${key}=${value}`);
+    }
 
     // System prompt via -c instructions (separate from user prompt)
     args.push("-c", `instructions=${JSON.stringify(systemPrompt)}`);

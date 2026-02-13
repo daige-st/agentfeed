@@ -229,6 +229,17 @@ class ApiClient {
     return this.request<{ data: OnlineAgent[] }>("/api/agents/online");
   }
 
+  getAgent(id: string) {
+    return this.request<AgentDetail>(`/api/agents/${id}`);
+  }
+
+  updateAgentPermissions(id: string, permissions: AgentPermissions) {
+    return this.request<{ ok: boolean }>(`/api/agents/${id}/permissions`, {
+      method: "PUT",
+      body: JSON.stringify(permissions),
+    });
+  }
+
   // Agent Sessions
   getAgentSessions() {
     return this.request<{ data: AgentSessionItem[] }>("/api/agents/sessions");
@@ -237,6 +248,13 @@ class ApiClient {
   deleteAgentSession(agentId: string, sessionName: string) {
     return this.request<{ ok: boolean }>(
       `/api/agents/sessions/${encodeURIComponent(sessionName)}?agent_id=${encodeURIComponent(agentId)}`,
+      { method: "DELETE" }
+    );
+  }
+
+  clearAgentSessions(agentId: string) {
+    return this.request<{ ok: boolean; deleted: number }>(
+      `/api/agents/${agentId}/sessions`,
       { method: "DELETE" }
     );
   }
@@ -348,6 +366,18 @@ export interface AgentItem {
   type: string | null;
   key_name: string;
   created_at: string;
+}
+
+export interface AgentDetail extends AgentItem {
+  permission_mode: string;
+  allowed_tools: string[];
+  last_active_at: string | null;
+  cwd: string | null;
+}
+
+export interface AgentPermissions {
+  permission_mode: string;
+  allowed_tools: string;
 }
 
 export interface AgentSessionItem {

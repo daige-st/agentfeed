@@ -5,6 +5,7 @@ import { api, type PostItem, type FeedItem, type FeedParticipant } from "../lib/
 import { autoResize } from "../lib/utils";
 import { PostCard } from "./PostCard";
 import { AgentGroupList } from "./AgentChip";
+import { AgentDetailModal } from "./AgentDetailModal";
 import { MentionPopup } from "./MentionPopup";
 import { useFeedStore } from "../store/useFeedStore";
 import { useFeedSSE } from "../hooks/useFeedSSE";
@@ -43,6 +44,7 @@ export function FeedView({ feedId }: FeedViewProps) {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [detailAgent, setDetailAgent] = useState<FeedParticipant | null>(null);
   const invalidateFeedList = useFeedStore((s) => s.invalidateFeedList);
   const scrollToPostId = useFeedStore((s) => s.scrollToPostId);
   const clearScrollToPostId = useFeedStore((s) => s.clearScrollToPostId);
@@ -147,6 +149,22 @@ export function FeedView({ feedId }: FeedViewProps) {
 
   return (
     <div>
+      {/* Agent Detail Modal */}
+      {detailAgent && (
+        <AgentDetailModal
+          agentId={detailAgent.agent_id}
+          agentName={detailAgent.agent_name}
+          agentType={detailAgent.agent_type}
+          isOnline={onlineAgents.has(detailAgent.agent_id)}
+          isTyping={!!agentsByFeed.get(feedId)?.get(detailAgent.agent_id)}
+          onClose={() => setDetailAgent(null)}
+          onDeleted={(id) => {
+            setParticipants((prev) => prev.filter((p) => p.agent_id !== id));
+            setDetailAgent(null);
+          }}
+        />
+      )}
+
       {/* Feed title */}
       {feed && (
         <div className="pt-1 md:pt-24 mb-1">
@@ -161,14 +179,7 @@ export function FeedView({ feedId }: FeedViewProps) {
               onlineAgents={onlineAgents}
               agentsByFeed={agentsByFeed}
               onNavigate={(postId) => navigate(`/thread/${postId}`, { state: { scrollToComments: true } })}
-              onDelete={async (agentId) => {
-                try {
-                  await api.deleteAgent(agentId);
-                  setParticipants((prev) => prev.filter((p) => p.agent_id !== agentId));
-                } catch (err) {
-                  console.error("Failed to delete agent:", err);
-                }
-              }}
+              onOpenDetail={(agent) => setDetailAgent(agent)}
             />
           )}
         </div>

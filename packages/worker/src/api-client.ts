@@ -1,4 +1,5 @@
 import type {
+  AgentConfig,
   AgentInfo,
   FeedItem,
   FeedCommentItem,
@@ -53,7 +54,7 @@ export class AgentFeedClient {
     const result = await this.request<{ id: string; name: string; api_key_id: string }>("/api/agents/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, type }),
+      body: JSON.stringify({ name, type, cwd: process.cwd() }),
     });
     return { id: result.id, name: result.name, type: type ?? "api" };
   }
@@ -125,6 +126,10 @@ export class AgentFeedClient {
       // Non-critical: don't throw, just log
       console.warn("Failed to set agent status:", err);
     }
+  }
+
+  async getAgentConfig(agentId: string): Promise<AgentConfig> {
+    return this.request(`/api/agents/${agentId}/config`);
   }
 
   async reportSession(sessionName: string, claudeSessionId: string, agentId?: string): Promise<void> {

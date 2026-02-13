@@ -15,6 +15,8 @@ interface AgentRow {
   api_key_id: string;
   parent_name: string | null;
   type: string | null;
+  cwd: string | null;
+  last_active_at: string | null;
   created_at: string;
 }
 
@@ -38,9 +40,10 @@ const agents = new Hono<AppEnv>();
 
 // POST /api/agents/register — Worker registers agent by project name
 agents.post("/register", apiKeyAuth, async (c) => {
-  const body = await c.req.json<{ name?: string; type?: string }>();
+  const body = await c.req.json<{ name?: string; type?: string; cwd?: string }>();
   const name = body.name?.trim();
   const type = body.type?.trim() || null;
+  const cwd = body.cwd?.trim() || null;
 
   if (!name) {
     throw badRequest("name is required");
@@ -59,22 +62,22 @@ agents.post("/register", apiKeyAuth, async (c) => {
     .get(name);
 
   if (existing) {
-    // Update api_key_id, parent_name, and type to current values
+    // Update api_key_id, parent_name, type, and cwd to current values
     const updated = db
-      .query<AgentRow, [string, string | null, string | null, string]>(
-        "UPDATE agents SET api_key_id = ?, parent_name = ?, type = ? WHERE name = ? RETURNING *"
+      .query<AgentRow, [string, string | null, string | null, string | null, string]>(
+        "UPDATE agents SET api_key_id = ?, parent_name = ?, type = ?, cwd = ? WHERE name = ? RETURNING *"
       )
-      .get(apiKeyId, parentName, type, name);
+      .get(apiKeyId, parentName, type, cwd, name);
     return c.json(updated, 200);
   }
 
   // Create new agent
   const id = generateId("agent");
   const agent = db
-    .query<AgentRow, [string, string, string, string | null, string | null]>(
-      "INSERT INTO agents (id, name, api_key_id, parent_name, type) VALUES (?, ?, ?, ?, ?) RETURNING *"
+    .query<AgentRow, [string, string, string, string | null, string | null, string | null]>(
+      "INSERT INTO agents (id, name, api_key_id, parent_name, type, cwd) VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
     )
-    .get(id, name, apiKeyId, parentName, type);
+    .get(id, name, apiKeyId, parentName, type, cwd);
 
   return c.json(agent, 201);
 });
@@ -87,7 +90,7 @@ agents.get("/", sessionAuth, (c) => {
       `SELECT a.*, k.name as key_name
        FROM agents a
        JOIN api_keys k ON a.api_key_id = k.id
-       ORDER BY a.created_at DESC`
+       ORDER BY a.last_active_at DESC NULLS LAST, a.created_at DESC`
     )
     .all();
 
@@ -254,6 +257,161 @@ agents.delete("/sessions/:name", sessionAuth, (c) => {
     agent_name: existing.agent_name,
     session_name: sessionName,
   });
+
+  return c.json({ ok: true });
+});
+
+// DELETE /api/agents/:id/sessions — Clear all sessions for an agent (admin only)
+agents.delete("/:id/sessions", sessionAuth, (c) => {
+  const { id } = c.req.param();
+  const db = getDb();
+
+  const agent = assertExists(
+    db.query<{ id: string; name: string }, [string]>(
+      "SELECT id, name FROM agents WHERE id = ?"
+    ).get(id),
+    "Agent not found"
+  );
+
+  const sessions = db
+    .query<{ session_name: string }, [string]>(
+      "SELECT session_name FROM agent_sessions WHERE agent_id = ?"
+    )
+    .all(id);
+
+  db.query("DELETE FROM agent_sessions WHERE agent_id = ?").run(id);
+
+  // Emit session_deleted events for Worker to pick up
+  for (const s of sessions) {
+    emitGlobalEvent({
+      type: "session_deleted",
+      agent_id: id,
+      agent_name: agent.name,
+      session_name: s.session_name,
+    });
+  }
+
+  return c.json({ ok: true, deleted: sessions.length });
+});
+
+// --- Agent Detail & Permissions ---
+// NOTE: GET /:id must be after all named GET routes (/active, /status, /online, /sessions)
+
+interface AgentDetailRow extends AgentRow {
+  key_name: string;
+  permission_mode: string;
+  allowed_tools: string;
+}
+
+// GET /api/agents/:id — Agent detail with CLI settings (admin only)
+agents.get("/:id", sessionAuth, (c) => {
+  const { id } = c.req.param();
+  const db = getDb();
+
+  const agent = assertExists(
+    db
+      .query<AgentDetailRow, [string]>(
+        `SELECT a.*, k.name as key_name,
+                COALESCE(ap.permission_mode, 'safe') as permission_mode,
+                COALESCE(ap.allowed_tools, '[]') as allowed_tools
+         FROM agents a
+         JOIN api_keys k ON a.api_key_id = k.id
+         LEFT JOIN agent_permissions ap ON a.id = ap.agent_id
+         WHERE a.id = ?`
+      )
+      .get(id),
+    "Agent not found"
+  );
+
+  // Parse allowed_tools from JSON string to array for consistent API response
+  let parsedTools: string[] = [];
+  try {
+    parsedTools = JSON.parse(agent.allowed_tools);
+  } catch {
+    parsedTools = [];
+  }
+
+  return c.json({ ...agent, allowed_tools: parsedTools });
+});
+
+interface AgentConfigRow {
+  permission_mode: string;
+  allowed_tools: string;
+}
+
+// GET /api/agents/:id/config — Agent CLI config for worker (API key auth)
+agents.get("/:id/config", apiKeyAuth, (c) => {
+  const { id } = c.req.param();
+  const db = getDb();
+
+  assertExists(
+    db.query<{ id: string }, [string]>("SELECT id FROM agents WHERE id = ?").get(id),
+    "Agent not found"
+  );
+
+  const config = db
+    .query<AgentConfigRow, [string]>(
+      "SELECT permission_mode, allowed_tools FROM agent_permissions WHERE agent_id = ?"
+    )
+    .get(id);
+
+  if (!config) {
+    return c.json({ permission_mode: "safe", allowed_tools: [] });
+  }
+
+  let tools: string[] = [];
+  try {
+    tools = JSON.parse(config.allowed_tools);
+  } catch {
+    tools = [];
+  }
+
+  return c.json({ permission_mode: config.permission_mode, allowed_tools: tools });
+});
+
+// PUT /api/agents/:id/permissions — Update agent CLI settings (admin only)
+agents.put("/:id/permissions", sessionAuth, async (c) => {
+  const { id } = c.req.param();
+  const db = getDb();
+
+  assertExists(
+    db.query<{ id: string }, [string]>("SELECT id FROM agents WHERE id = ?").get(id),
+    "Agent not found"
+  );
+
+  const body = await c.req.json<{
+    permission_mode?: string;
+    allowed_tools?: string;
+  }>();
+
+  // Validate permission_mode
+  if (body.permission_mode !== undefined && body.permission_mode !== "safe" && body.permission_mode !== "yolo") {
+    throw badRequest("permission_mode must be 'safe' or 'yolo'");
+  }
+
+  // Validate allowed_tools
+  if (body.allowed_tools !== undefined) {
+    try {
+      const parsed = JSON.parse(body.allowed_tools);
+      if (!Array.isArray(parsed) || !parsed.every((v: unknown) => typeof v === "string")) {
+        throw badRequest("allowed_tools must be a JSON array of tool name strings");
+      }
+    } catch (e) {
+      if (e instanceof SyntaxError) {
+        throw badRequest("allowed_tools must be a valid JSON array of tool name strings");
+      }
+      throw e;
+    }
+  }
+
+  db.query(
+    `INSERT INTO agent_permissions (agent_id, permission_mode, allowed_tools, updated_at)
+     VALUES (?, ?, ?, datetime('now'))
+     ON CONFLICT(agent_id) DO UPDATE SET
+       permission_mode = excluded.permission_mode,
+       allowed_tools = excluded.allowed_tools,
+       updated_at = datetime('now')`
+  ).run(id, body.permission_mode ?? "safe", body.allowed_tools ?? "[]");
 
   return c.json({ ok: true });
 });

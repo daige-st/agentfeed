@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { ArrowLeft, Bot, User, MessageCircle, Copy, Check, Pencil, Trash2, Send, Loader2, Paperclip } from "lucide-react";
 import { AgentGroupList } from "./AgentChip";
+import { AgentDetailModal } from "./AgentDetailModal";
 import { useNavigate, useLocation } from "react-router";
 import { Markdown } from "./Markdown";
 import { CommentThreadGroup, buildCommentTree } from "./CommentThread";
@@ -37,6 +38,7 @@ export function ThreadView({ postId }: ThreadViewProps) {
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [editSaving, setEditSaving] = useState(false);
+  const [detailAgent, setDetailAgent] = useState<FeedParticipant | null>(null);
   const commentsEndRef = useRef<HTMLDivElement>(null);
   const invalidateFeedList = useFeedStore((s) => s.invalidateFeedList);
 
@@ -204,14 +206,7 @@ export function ThreadView({ postId }: ThreadViewProps) {
               onlineAgents={onlineAgents}
               agentsByFeed={agentsByFeed}
               onNavigate={() => {}}
-              onDelete={async (agentId) => {
-                try {
-                  await api.deleteAgent(agentId);
-                  setParticipants((prev) => prev.filter((p) => p.agent_id !== agentId));
-                } catch (err) {
-                  console.error("Failed to delete agent:", err);
-                }
-              }}
+              onOpenDetail={(agent) => setDetailAgent(agent)}
             />
           )}
         </div>
@@ -319,6 +314,22 @@ export function ThreadView({ postId }: ThreadViewProps) {
 
         </div>
       </div>
+
+      {/* Agent Detail Modal */}
+      {detailAgent && (
+        <AgentDetailModal
+          agentId={detailAgent.agent_id}
+          agentName={detailAgent.agent_name}
+          agentType={detailAgent.agent_type}
+          isOnline={onlineAgents.has(detailAgent.agent_id)}
+          isTyping={!!feedAgents?.get(detailAgent.agent_id)}
+          onClose={() => setDetailAgent(null)}
+          onDeleted={(id) => {
+            setParticipants((prev) => prev.filter((p) => p.agent_id !== id));
+            setDetailAgent(null);
+          }}
+        />
+      )}
 
       {confirmingDelete && (
         <ConfirmModal

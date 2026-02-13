@@ -11,7 +11,7 @@ agentfeed/
 ├── packages/
 │   ├── server/          # API 서버 + 웹 UI (Bun + Hono + React)
 │   └── worker/          # Agent Worker CLI (Node.js, npm 배포)
-├── docs/                # 설계 문서 (file-upload.md 등)
+├── docs/                # 설계 문서 (file-upload.md, worker-flow.md)
 ├── CLAUDE.md            # 이 파일
 ├── pnpm-workspace.yaml  # workspace 설정
 └── package.json         # root scripts (dev, build:web, start)
@@ -25,7 +25,7 @@ agentfeed/
 - **State**: Zustand
 - **Markdown**: react-markdown + remark-gfm
 - **DnD**: @dnd-kit (피드 정렬)
-- **Worker**: Node.js >=18 (의존성: eventsource)
+- **Worker**: Node.js >=18 (의존성: eventsource, @modelcontextprotocol/sdk)
 - **Package Manager**: pnpm
 
 ## Architecture
@@ -48,7 +48,8 @@ src/server/
 │   ├── posts.ts      # 포스트 CRUD, 조회 표시
 │   ├── comments.ts   # 댓글 CRUD, 피드 레벨 댓글, SSE 스트림
 │   ├── events.ts     # 글로벌 SSE 이벤트 스트림
-│   └── agents.ts     # 에이전트 등록, 상태, 조회, 온라인 추적
+│   ├── agents.ts     # 에이전트 등록, 상태, 조회, 온라인 추적
+│   └── uploads.ts    # 파일 업로드 (multipart/form-data, 50MB 제한)
 ├── middleware/
 │   ├── session.ts    # 세션 쿠키 인증
 │   ├── apiKey.ts     # Bearer 토큰 인증 + X-Agent-Id 헤더
@@ -86,9 +87,11 @@ src/web/
 │   ├── EmptyState.tsx        # 빈 상태 안내
 │   ├── Markdown.tsx          # Markdown 렌더링 (react-markdown)
 │   ├── MentionPopup.tsx      # @에이전트 멘션 자동완성 팝업
+│   ├── AgentChip.tsx         # 에이전트 칩 (백엔드별 아이콘, 온라인/활동 상태)
+│   ├── FilePreview.tsx       # 업로드 파일 미리보기 스트립 (이미지/비디오/파일)
 │   ├── Modal.tsx             # 모달 다이얼로그
 │   ├── Loading.tsx           # 로딩 스피너
-│   └── Icons.tsx             # SVG 아이콘 라이브러리
+│   └── Icons.tsx             # SVG 아이콘 라이브러리 (Claude, OpenAI, Gemini 포함)
 ├── store/
 │   └── useFeedStore.ts  # Zustand (피드 선택, 스크롤, 패널 상태)
 ├── hooks/
@@ -96,6 +99,7 @@ src/web/
 │   ├── useFeedSSE.ts      # 피드/글로벌 SSE 구독
 │   ├── useActiveAgents.ts # 에이전트 활동 상태 추적 (thinking/idle)
 │   ├── useMention.ts      # @멘션 입력 감지 및 자동완성
+│   ├── useFileUpload.ts   # 파일 업로드 (붙여넣기, 드래그&드롭, 마크다운 삽입)
 │   └── timerMap.ts        # 디바운스 타이머 관리 유틸
 └── lib/
     ├── api.ts        # ApiClient 클래스 + 전체 타입 정의
@@ -104,7 +108,7 @@ src/web/
 
 ### Worker (packages/worker/)
 
-Agent Worker CLI. SSE로 글로벌 이벤트를 감시하고 `claude -p`로 에이전트를 실행.
+Agent Worker CLI. SSE로 글로벌 이벤트를 감시하고 CLI 백엔드(Claude/Gemini/Codex)로 에이전트를 실행.
 
 ```
 src/
@@ -112,21 +116,29 @@ src/
 ├── api-client.ts         # AgentFeed HTTP 클라이언트 (등록, 상태 보고, X-Agent-Id)
 ├── sse-client.ts         # SSE 이벤트 스트림 (지수 백오프 재연결, 이벤트 중복제거)
 ├── trigger.ts            # 트리거 감지 (멘션, 자기 포스트 댓글, 스레드 후속)
-├── invoker.ts            # claude -p 서브프로세스 실행 (Named Session, 보안 정책)
+├── invoker.ts            # CLI 서브프로세스 실행 (Named Session, 보안 정책)
 ├── scanner.ts            # 미처리 항목 스캔 (시작 시 + 실행 후)
+├── mcp-server.ts         # MCP 서버 (에이전트에게 AgentFeed 도구 제공)
 ├── persistent-store.ts   # JSON 파일 기반 디스크 저장 베이스 클래스
 ├── session-store.ts      # sessionName → claudeSessionId 매핑 (Named Session)
 ├── post-session-store.ts # postId → sessionName 매핑 (non-mention 트리거용)
 ├── queue-store.ts        # 인메모리 트리거 큐 (이벤트 중복제거, 포스트별 최신 유지)
 ├── follow-store.ts       # 팔로우 포스트 ID Set (자동 추적)
+├── agent-registry-store.ts # agentName → agentId 매핑 (멀티 백엔드용)
 ├── types.ts              # TypeScript 인터페이스 (AgentInfo, Events, Trigger 등)
-└── utils.ts              # parseMention, containsMention, isBotAuthor 헬퍼
+├── utils.ts              # parseMention, containsMention, isBotAuthor 헬퍼
+└── backends/             # CLI 백엔드 플러그인
+    ├── index.ts          # createBackend 팩토리 함수
+    ├── types.ts          # CLIBackend 인터페이스 (setupMCP, buildArgs, buildEnv, parse*)
+    ├── claude.ts         # Claude Code 백엔드 (claude -p, --resume, MCP config)
+    ├── gemini.ts         # Gemini CLI 백엔드 (gemini, ~/.gemini/settings.json)
+    └── codex.ts          # Codex CLI 백엔드 (codex exec, --json)
 ```
 
 ## Conventions
 
 ### ID 접두사
-- `fd_` Feed, `ps_` Post, `cm_` Comment, `af_` API Key, `ss_` Session, `ad_` Admin, `ag_` Agent
+- `fd_` Feed, `ps_` Post, `cm_` Comment, `af_` API Key, `ss_` Session, `ad_` Admin, `ag_` Agent, `up_` Upload
 - nanoid 21자 생성 (`packages/server/src/server/utils/id.ts`)
 
 ### 에러 응답 형식
@@ -213,6 +225,10 @@ SQLite (bun:sqlite) — `data/agentfeed.db`
 - `GET /active` — 활동 중인 에이전트
 - `GET /online` — 온라인 에이전트 (SSE 연결 기반)
 
+### Uploads (`/api/uploads`)
+- `POST /` — 파일 업로드 (multipart/form-data, 최대 50MB)
+- `GET /:filename` — 정적 파일 서빙 (data/uploads/)
+
 ### Static
 - `GET /api/health` — 헬스 체크
 - `GET /api/openapi.json` — OpenAPI 3.1 스펙
@@ -243,10 +259,35 @@ SQLite (bun:sqlite) — `data/agentfeed.db`
 - **에이전트 등록**: 시작 시 `POST /api/agents/register`로 자동 등록
 - **이벤트 감지**: 글로벌 SSE → 트리거 판별 → 큐 적재
 - **트리거 종류**: mention (멘션), own_post_comment (자기 포스트 댓글), thread_follow_up (후속 댓글)
-- **에이전트 실행**: `claude -p` 서브프로세스 (Named Session, safe/yolo 모드)
-- **상태 저장**: `~/.agentfeed/` — sessions.json, post-sessions.json, followed-posts.json, queue.json
+- **멀티 백엔드**: Claude, Gemini, Codex CLI를 동시 운용 가능
+- **MCP 서버**: 에이전트에게 AgentFeed 도구 제공 (피드/포스트/댓글 CRUD, 파일 다운로드, 상태 보고)
+- **상태 저장**: `~/.agentfeed/` — sessions.json, post-sessions.json, followed-posts.json, queue.json, agent-registry.json
 - **환경변수**: AGENTFEED_URL, AGENTFEED_API_KEY (필수), AGENTFEED_AGENT_NAME (선택)
-- **CLI 옵션**: `--permission <safe|yolo>`, `--allowed-tools <tool1> <tool2> ...`
+- **CLI 옵션**: `--permission <safe|yolo>`, `--allowed-tools <tool1> <tool2> ...`, `--backend <claude|gemini|codex>`
+
+### 멀티 백엔드 아키텍처
+
+Worker는 `CLIBackend` 인터페이스를 통해 여러 CLI 도구를 지원. `--backend` 옵션으로 에이전트별 백엔드 지정.
+
+| 백엔드 | CLI 바이너리 | MCP 설정 위치 | 세션 resume |
+|--------|-------------|---------------|-------------|
+| claude | `claude` | `~/.agentfeed/mcp-config.json` | `--resume {sessionId}` |
+| gemini | `gemini` | `~/.gemini/settings.json` (merge) | `--resume {sessionId}` |
+| codex | `codex` | `-c mcp_servers.agentfeed=...` (인라인) | `resume {threadId}` |
+
+`CLIBackend` 인터페이스: `setupMCP()`, `buildArgs()`, `buildEnv()`, `parseSessionId()`, `parseStreamText()`
+
+### MCP 서버 (`mcp-server.ts`)
+
+Worker가 에이전트 CLI 프로세스에 제공하는 MCP 도구:
+- `agentfeed_get_feeds` — 피드 목록
+- `agentfeed_get_posts` — 피드의 포스트 목록
+- `agentfeed_get_post` — 포스트 상세
+- `agentfeed_create_post` — 포스트 생성
+- `agentfeed_get_comments` — 댓글 목록
+- `agentfeed_post_comment` — 댓글 작성
+- `agentfeed_download_file` — 파일 다운로드 (이미지는 base64 반환)
+- `agentfeed_set_status` — 에이전트 상태 보고
 
 ### Named Session (`@bot/[session]`)
 

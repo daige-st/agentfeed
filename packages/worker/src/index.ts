@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import * as readline from "node:readline";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, copyFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { AgentFeedClient } from "./api-client.js";
@@ -71,6 +71,60 @@ function detectInstalledBackends(): BackendType[] {
   });
 }
 
+const PROBE_TIMEOUT_MS = 10_000;
+
+function probeBackend(type: BackendType): Promise<boolean> {
+  const backend = createBackend(type);
+
+  // Minimal args to trigger auth check without heavy work
+  let args: string[];
+  switch (type) {
+    case "claude":
+      args = ["-p", "say ok", "--output-format", "stream-json", "--max-turns", "1"];
+      break;
+    case "gemini":
+      args = ["say ok", "--output-format", "stream-json"];
+      break;
+    case "codex":
+      args = ["exec", "--json", "--skip-git-repo-check", "--full-auto", "say ok"];
+      break;
+  }
+
+  const env = backend.buildEnv({
+    PATH: process.env.PATH ?? "",
+    HOME: process.env.HOME ?? "",
+    USER: process.env.USER ?? "",
+    SHELL: process.env.SHELL ?? "/bin/sh",
+    LANG: process.env.LANG ?? "en_US.UTF-8",
+    TERM: process.env.TERM ?? "xterm-256color",
+  });
+
+  return new Promise((resolve) => {
+    try {
+      const proc = spawn(backend.binaryName, args, { env, stdio: "pipe" });
+
+      const timer = setTimeout(() => {
+        // Still alive after timeout = authenticated (API call in progress)
+        proc.kill("SIGTERM");
+        resolve(true);
+      }, PROBE_TIMEOUT_MS);
+
+      proc.on("error", () => {
+        clearTimeout(timer);
+        resolve(false);
+      });
+
+      proc.on("close", (code) => {
+        clearTimeout(timer);
+        // Quick exit with 0 = completed ok, non-zero = auth/config failure
+        resolve(code === 0);
+      });
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 function confirmYolo(): Promise<boolean> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
@@ -109,7 +163,6 @@ const baseName = process.env.AGENTFEED_AGENT_NAME ?? path.basename(process.cwd()
 const client = new AgentFeedClient(serverUrl, apiKey);
 
 let sseConnection: ReturnType<typeof connectSSE> | null = null;
-const onlineSSEConnections: ReturnType<typeof connectSSE>[] = [];
 const wakeAttempts = new Map<string, number>();
 const botMentionCounts = new Map<string, number>();
 const runningKeys = new Set<string>();
@@ -132,7 +185,6 @@ let backendAgents: BackendAgent[] = [];
 function shutdown() {
   console.log("\nShutting down...");
   sseConnection?.close();
-  for (const conn of onlineSSEConnections) conn.close();
   process.exit(0);
 }
 
@@ -175,20 +227,37 @@ async function main(): Promise<void> {
     }
   }
 
-  // Auto-detect installed backends
+  // Auto-detect installed backends and probe auth
   const installedBackends = detectInstalledBackends();
   if (installedBackends.length === 0) {
     console.error("No supported CLI backends found. Install one of: claude, codex, gemini");
     process.exit(1);
   }
 
+  console.log(`Installed backends: ${installedBackends.join(", ")}. Probing auth...`);
+  const availableBackends: BackendType[] = [];
+  for (const type of installedBackends) {
+    const ok = await probeBackend(type);
+    if (ok) {
+      availableBackends.push(type);
+      console.log(`  ${type}: ✓ authenticated`);
+    } else {
+      console.log(`  ${type}: ✗ not authenticated, skipping`);
+    }
+  }
+
+  if (availableBackends.length === 0) {
+    console.error("No authenticated backends found. Please log in to at least one CLI.");
+    process.exit(1);
+  }
+
   const toolsInfo = extraAllowedTools.length > 0
     ? ` + ${extraAllowedTools.join(", ")}`
     : "";
-  console.log(`AgentFeed Worker starting... (backends: ${installedBackends.join(", ")}, permission: ${permissionMode}${toolsInfo})`);
+  console.log(`AgentFeed Worker starting... (backends: ${availableBackends.join(", ")}, permission: ${permissionMode}${toolsInfo})`);
 
-  // Register an agent for each detected backend
-  for (const type of installedBackends) {
+  // Register an agent for each available backend
+  for (const type of availableBackends) {
     // Migrate legacy session file for first backend (usually claude)
     migrateSessionFile(type);
 
@@ -200,12 +269,34 @@ async function main(): Promise<void> {
       path.join(homedir(), ".agentfeed", `sessions-${type}.json`)
     );
     const ba: BackendAgent = { backendType: type, backend, agent, sessionStore };
+
+    // Fetch per-agent config from server (permission_mode, allowed_tools)
+    try {
+      const config = await client.getAgentConfig(agent.id);
+      ba.config = config;
+      console.log(`Agent: ${agent.name} (${agent.id}) [${type}] (server config: ${config.permission_mode}, tools: ${config.allowed_tools.length})`);
+    } catch {
+      console.log(`Agent: ${agent.name} (${agent.id}) [${type}] (using CLI defaults)`);
+    }
+
     backendAgentMap.set(type, ba);
     agentRegistry.set(agentName, agent.id);
-    console.log(`Agent: ${agent.name} (${agent.id}) [${type}]`);
   }
 
   backendAgents = Array.from(backendAgentMap.values());
+
+  // Confirm yolo if any server config overrides to yolo (and CLI didn't already confirm)
+  if (permissionMode !== "yolo") {
+    const hasServerYolo = backendAgents.some((ba) => ba.config?.permission_mode === "yolo");
+    if (hasServerYolo) {
+      console.log("\nServer config has yolo permission for one or more agents.");
+      const confirmed = await confirmYolo();
+      if (!confirmed) {
+        console.log("Cancelled. Update agent permissions on the server to use safe mode.");
+        process.exit(0);
+      }
+    }
+  }
 
   // Register Named Session agents for all backends
   for (const ba of backendAgents) {
@@ -237,7 +328,10 @@ async function main(): Promise<void> {
   const sseUrl = `${serverUrl}/api/events/stream`;
   console.log("Connecting to global event stream...");
 
-  sseConnection = connectSSE(sseUrl, apiKey, client.agentId, (rawEvent) => {
+  // Collect all backend agent IDs for online tracking via single SSE connection
+  const allAgentIds = backendAgents.map((ba) => ba.agent.id);
+
+  sseConnection = connectSSE(sseUrl, apiKey, allAgentIds, (rawEvent) => {
     if (rawEvent.type === "heartbeat") return;
 
     // Handle session_deleted events directly
@@ -272,12 +366,6 @@ async function main(): Promise<void> {
   }, (err) => {
     console.error("SSE error, reconnecting...", err.message);
   });
-
-  // Open extra SSE connections for online tracking of other agents
-  for (const ba of backendAgents.slice(1)) {
-    const conn = connectSSE(sseUrl, apiKey, ba.agent.id, () => {}, () => {});
-    onlineSSEConnections.push(conn);
-  }
 
   console.log("Worker ready. Listening for events...");
 }
@@ -359,6 +447,12 @@ async function processItem(trigger: TriggerContext): Promise<void> {
       post_id: trigger.postId,
     }, sessionAgentId);
 
+    // Server config overrides CLI args
+    const effectivePermission = ba.config?.permission_mode ?? permissionMode;
+    const effectiveTools = ba.config?.allowed_tools?.length
+      ? ba.config.allowed_tools
+      : extraAllowedTools;
+
     let retries = 0;
     let success = false;
     try {
@@ -370,8 +464,8 @@ async function processItem(trigger: TriggerContext): Promise<void> {
             apiKey,
             serverUrl,
             recentContext,
-            permissionMode,
-            extraAllowedTools,
+            permissionMode: effectivePermission,
+            extraAllowedTools: effectiveTools,
             sessionId: ba.sessionStore.get(trigger.sessionName),
             agentId: sessionAgentId,
             timeoutMs: AGENT_TIMEOUT_MS,

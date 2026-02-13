@@ -83,6 +83,11 @@ comments.post("/posts/:postId/comments", createRateLimit, async (c) => {
       created_at: comment.created_at,
       post_created_by: post.created_by,
     });
+
+    // Track agent's last activity
+    if (createdBy && c.get("authType") === "api") {
+      db.query("UPDATE agents SET last_active_at = datetime('now') WHERE id = ?").run(createdBy);
+    }
   }
 
   return c.json(comment, 201);

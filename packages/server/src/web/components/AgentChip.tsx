@@ -1,4 +1,4 @@
-import { Bot, X } from "lucide-react";
+import { Bot } from "lucide-react";
 import { ClaudeIcon, OpenAIIcon, GeminiIcon } from "./Icons";
 import type { FeedParticipant, ActiveAgent } from "../lib/api";
 
@@ -8,8 +8,6 @@ interface AgentChipProps {
   isTyping: boolean;
   isOnline: boolean;
   onClick?: () => void;
-  onDelete?: () => void;
-  disabled?: boolean;
 }
 
 export function AgentIcon({ type, isActive }: { type?: string | null; isActive: boolean }) {
@@ -26,54 +24,35 @@ export function AgentIcon({ type, isActive }: { type?: string | null; isActive: 
   }
 }
 
-export function AgentChip({ name, type, isTyping, isOnline, onClick, onDelete, disabled }: AgentChipProps) {
+export function AgentChip({ name, type, isTyping, isOnline, onClick }: AgentChipProps) {
   return (
-    <div
-      className={`group flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${
+    <button
+      type="button"
+      onClick={onClick}
+      className={`group flex items-center gap-2 px-3 py-2 rounded-xl border transition-all cursor-pointer hover:shadow-sm ${
         isTyping
           ? "border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-950/30 text-gray-900 dark:text-text-primary"
           : isOnline
-            ? "border-card-border bg-white dark:bg-surface-active text-gray-900 dark:text-text-primary"
-            : "border-gray-200 dark:border-border-default bg-white dark:bg-surface-active text-gray-400 dark:text-text-tertiary opacity-50"
+            ? "border-card-border bg-white dark:bg-surface-active text-gray-900 dark:text-text-primary hover:border-gray-300 dark:hover:border-border-strong"
+            : "border-gray-200 dark:border-border-default bg-white dark:bg-surface-active text-gray-400 dark:text-text-tertiary opacity-50 hover:opacity-75"
       }`}
     >
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={disabled}
-        className={`flex items-center gap-2 ${
-          isTyping ? "cursor-pointer" : "cursor-default"
-        }`}
-      >
-        <div className="relative">
-          <AgentIcon type={type} isActive={isTyping || isOnline} />
-          {(isTyping || isOnline) && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-              {isTyping && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />}
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
-            </span>
-          )}
-        </div>
-        <span className="text-sm font-medium">{name}</span>
-        {isTyping && (
-          <span className="text-[10px] font-medium text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 rounded-full">
-            Active
+      <div className="relative">
+        <AgentIcon type={type} isActive={isTyping || isOnline} />
+        {(isTyping || isOnline) && (
+          <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+            {isTyping && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />}
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
           </span>
         )}
-      </button>
-      {onDelete && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="hidden group-hover:flex items-center justify-center w-4 h-4 -mr-1 rounded-full text-gray-400 dark:text-text-tertiary hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors cursor-pointer"
-        >
-          <X size={12} />
-        </button>
+      </div>
+      <span className="text-sm font-medium">{name}</span>
+      {isTyping && (
+        <span className="text-[10px] font-medium text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50 px-1.5 py-0.5 rounded-full">
+          Active
+        </span>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -85,10 +64,10 @@ interface AgentGroupListProps {
   onlineAgents: Map<string, unknown>;
   agentsByFeed: Map<string, Map<string, ActiveAgent>>;
   onNavigate: (postId: string) => void;
-  onDelete?: (agentId: string) => void;
+  onOpenDetail?: (agent: FeedParticipant) => void;
 }
 
-function findActiveAgent(
+export function findActiveAgent(
   agentId: string,
   feedId: string | undefined,
   agentsByFeed: Map<string, Map<string, ActiveAgent>>
@@ -150,7 +129,7 @@ export function AgentGroupList({
   onlineAgents,
   agentsByFeed,
   onNavigate,
-  onDelete,
+  onOpenDetail,
 }: AgentGroupListProps) {
   const groups = groupParticipants(participants);
 
@@ -164,7 +143,6 @@ export function AgentGroupList({
           const isOnline = onlineAgents.has(agent.agent_id);
           const activeAgent = findActiveAgent(agent.agent_id, feedId, agentsByFeed);
           const isTyping = !!activeAgent;
-          const canNavigate = isTyping && !!activeAgent.post_id;
 
           return (
             <AgentChip
@@ -173,9 +151,7 @@ export function AgentGroupList({
               type={agent.agent_type}
               isTyping={isTyping}
               isOnline={isOnline}
-              disabled={!canNavigate}
-              onClick={canNavigate ? () => onNavigate(activeAgent.post_id) : undefined}
-              onDelete={onDelete ? () => onDelete(agent.agent_id) : undefined}
+              onClick={onOpenDetail ? () => onOpenDetail(agent) : undefined}
             />
           );
         }
@@ -192,21 +168,19 @@ export function AgentGroupList({
               const isOnline = onlineAgents.has(agent.agent_id);
               const activeAgent = findActiveAgent(agent.agent_id, feedId, agentsByFeed);
               const isTyping = !!activeAgent;
-              const canNavigate = isTyping && !!activeAgent.post_id;
               const displayName = deriveDisplayName(agent, true);
 
               return (
                 <button
                   key={agent.agent_id}
                   type="button"
-                  onClick={canNavigate ? () => onNavigate(activeAgent.post_id) : undefined}
-                  disabled={!canNavigate}
-                  className={`group/item flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all ${
+                  onClick={onOpenDetail ? () => onOpenDetail(agent) : undefined}
+                  className={`group/item flex items-center gap-1.5 px-2 py-1 rounded-lg transition-all cursor-pointer hover:bg-gray-100 dark:hover:bg-interactive-hover ${
                     isTyping
-                      ? "bg-green-50 dark:bg-green-950/30 cursor-pointer hover:bg-green-100 dark:hover:bg-green-950/50"
+                      ? "bg-green-50 dark:bg-green-950/30"
                       : isOnline
                         ? ""
-                        : "opacity-50"
+                        : "opacity-50 hover:opacity-75"
                   }`}
                 >
                   <div className="relative">
@@ -225,18 +199,6 @@ export function AgentGroupList({
                     <span className="text-[9px] font-medium text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50 px-1 py-0.5 rounded-full">
                       Active
                     </span>
-                  )}
-                  {onDelete && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelete(agent.agent_id);
-                      }}
-                      className="hidden group-hover/item:flex items-center justify-center w-3.5 h-3.5 rounded-full text-gray-400 dark:text-text-tertiary hover:text-red-500 dark:hover:text-red-400 transition-colors cursor-pointer"
-                    >
-                      <X size={10} />
-                    </button>
                   )}
                 </button>
               );

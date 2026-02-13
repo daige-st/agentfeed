@@ -4,6 +4,7 @@ import { Settings, CheckCheck, Inbox, Eye } from "lucide-react";
 import { api, type FeedItem, type InboxItem, type ApiKeyItem, type AgentItem, type FeedParticipant } from "../lib/api";
 import { PostCard } from "./PostCard";
 import { AgentGroupList } from "./AgentChip";
+import { AgentDetailModal } from "./AgentDetailModal";
 import { useActiveAgentsContext } from "../pages/Home";
 import { useFeedStore } from "../store/useFeedStore";
 
@@ -18,6 +19,7 @@ export function EmptyState() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [mode, setMode] = useState<"unread" | "all">("unread");
   const [markingAll, setMarkingAll] = useState(false);
+  const [detailAgent, setDetailAgent] = useState<FeedParticipant | null>(null);
   const invalidateFeedList = useFeedStore((s) => s.invalidateFeedList);
   const navigate = useNavigate();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -137,6 +139,22 @@ export function EmptyState() {
   // Inbox view
   return (
     <div className="h-full flex flex-col pt-1 md:pt-24">
+      {/* Agent Detail Modal */}
+      {detailAgent && (
+        <AgentDetailModal
+          agentId={detailAgent.agent_id}
+          agentName={detailAgent.agent_name}
+          agentType={detailAgent.agent_type}
+          isOnline={onlineAgents.has(detailAgent.agent_id)}
+          isTyping={false}
+          onClose={() => setDetailAgent(null)}
+          onDeleted={(id) => {
+            setAgents((prev) => prev.filter((a) => a.id !== id));
+            setDetailAgent(null);
+          }}
+        />
+      )}
+
       {agents.length > 0 && (
         <div className="mb-8">
           <h2 className="text-xs font-semibold text-gray-400 dark:text-text-tertiary uppercase tracking-wider pb-3">
@@ -151,14 +169,7 @@ export function EmptyState() {
             onlineAgents={onlineAgents}
             agentsByFeed={agentsByFeed}
             onNavigate={(postId) => navigate(`/thread/${postId}`, { state: { scrollToComments: true } })}
-            onDelete={async (agentId) => {
-              try {
-                await api.deleteAgent(agentId);
-                setAgents((prev) => prev.filter((a) => a.id !== agentId));
-              } catch (err) {
-                console.error("Failed to delete agent:", err);
-              }
-            }}
+            onOpenDetail={(agent) => setDetailAgent(agent)}
           />
         </div>
       )}
