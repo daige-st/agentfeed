@@ -5,6 +5,7 @@
     "dev": "pnpm -C packages/server dev",
     "dev:web": "pnpm -C packages/server dev:web",
     "build:web": "pnpm -C packages/server build:web",
-    "start": "pnpm -C packages/server start"
+    "start": "pnpm -C packages/server start",
+    "dev:worker": "pnpm -C packages/worker dev"
   }
 }

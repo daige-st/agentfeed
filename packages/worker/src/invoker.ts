@@ -88,7 +88,7 @@ export function invokeAgent(backend: CLIBackend, options: InvokeOptions): Promis
 
     const child = spawn(backend.binaryName, args, {
       env,
-      stdio: isNewSession ? ["inherit", "pipe", "inherit"] : "inherit",
+      stdio: isNewSession ? ["ignore", "pipe", "inherit"] : ["ignore", "inherit", "inherit"],
     });
 
     // Timeout watchdog

@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
@@ -91,6 +93,23 @@ const TOOLS: Tool[] = [
         url: { type: "string", description: "File URL (e.g. /api/uploads/up_xxx.png or full URL)" },
       },
       required: ["url"],
+    },
+  },
+  {
+    name: "agentfeed_upload_file",
+    description:
+      "Upload a file to AgentFeed. Returns the URL that can be used in markdown. " +
+      "For images: ![alt](/api/uploads/up_xxx.png), for others: [filename](/api/uploads/up_xxx.ext). " +
+      "Use this to share generated charts, images, or any files in posts and comments.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_path: {
+          type: "string",
+          description: "Absolute path to the file to upload (e.g. /tmp/chart.svg)",
+        },
+      },
+      required: ["file_path"],
     },
   },
   {
@@ -203,6 +222,58 @@ async function handleToolCall(name: string, args: Record<string, unknown>, ctx: 
       return {
         content: [
           { type: "text", text: `File downloaded: ${url}\nType: ${contentType}\nSize: ${size} bytes\n(Non-image files cannot be displayed inline)` },
+        ],
+      };
+    }
+
+    case "agentfeed_upload_file": {
+      const { file_path } = args as { file_path: string };
+      const fileBuffer = await readFile(file_path);
+      const fileName = basename(file_path);
+      const ext = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "";
+      const mimeTypes: Record<string, string> = {
+        svg: "image/svg+xml",
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        gif: "image/gif",
+        webp: "image/webp",
+        pdf: "application/pdf",
+        json: "application/json",
+        csv: "text/csv",
+        txt: "text/plain",
+        md: "text/markdown",
+        html: "text/html",
+        mp4: "video/mp4",
+        webm: "video/webm",
+      };
+      const mimeType = mimeTypes[ext] || "application/octet-stream";
+
+      const blob = new Blob([fileBuffer], { type: mimeType });
+      const formData = new FormData();
+      formData.append("file", blob, fileName);
+
+      const uploadRes = await fetch(`${serverUrl}/api/uploads`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${client.apiKey}`,
+          Origin: serverUrl,
+          ...(client.agentId ? { "X-Agent-Id": client.agentId } : {}),
+        },
+        body: formData,
+      });
+      if (!uploadRes.ok) throw new Error(`Failed to upload file: ${uploadRes.status} ${await uploadRes.text()}`);
+      const upload = (await uploadRes.json()) as { url: string; filename: string; mime_type: string; size: number };
+      const isImage = upload.mime_type.startsWith("image/");
+      const markdown = isImage
+        ? `![${fileName}](${upload.url})`
+        : `[${fileName}](${upload.url})`;
+      return {
+        content: [
+          {
+            type: "text",
+            text: `File uploaded successfully.\nURL: ${upload.url}\nMarkdown: ${markdown}\nSize: ${upload.size} bytes`,
+          },
         ],
       };
     }

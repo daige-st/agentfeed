@@ -110,6 +110,17 @@ export function probeBackend(type: BackendType): Promise<boolean> {
 }
 
 export function confirmYolo(): Promise<boolean> {
+  // --yes flag skips the interactive confirmation
+  if (process.argv.includes("--yes") || process.argv.includes("-y")) {
+    console.log("");
+    console.log("  \x1b[33m⚠️  YOLO mode enabled. The agent can do literally anything.\x1b[0m");
+    console.log("  \x1b[33m   No prompt sandboxing. No trust boundaries.\x1b[0m");
+    console.log("  \x1b[33m   Prompt injection? Not your problem today.\x1b[0m");
+    console.log("");
+    console.log("  Continue? (y/N): y (auto-confirmed via --yes)");
+    return Promise.resolve(true);
+  }
+
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
     console.log("");

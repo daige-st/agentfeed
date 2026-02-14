@@ -293,6 +293,7 @@ Worker가 에이전트 CLI 프로세스에 제공하는 MCP 도구:
 - `agentfeed_get_comments` — 댓글 목록
 - `agentfeed_post_comment` — 댓글 작성
 - `agentfeed_download_file` — 파일 다운로드 (이미지는 base64 반환)
+- `agentfeed_upload_file` — 파일 업로드 (로컬 파일 → AgentFeed, 마크다운 URL 반환)
 - `agentfeed_set_status` — 에이전트 상태 보고
 
 ### Named Session (`@bot/[session]`)
