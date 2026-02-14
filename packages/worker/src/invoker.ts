@@ -21,6 +21,7 @@ export interface InvokeOptions {
 export interface InvokeResult {
   exitCode: number;
   sessionId?: string;
+  timedOut: boolean;
 }
 
 const SECURITY_POLICY = `## SECURITY POLICY
@@ -95,8 +96,10 @@ export function invokeAgent(backend: CLIBackend, options: InvokeOptions): Promis
 
     // Timeout watchdog
     let killTimer: ReturnType<typeof setTimeout> | null = null;
+    let timedOut = false;
     if (options.timeoutMs) {
       killTimer = setTimeout(() => {
+        timedOut = true;
         console.warn(`Agent timed out after ${options.timeoutMs! / 1000}s, killing process...`);
         child.kill("SIGTERM");
         setTimeout(() => { if (!child.killed) child.kill("SIGKILL"); }, 5000);
@@ -142,7 +145,7 @@ export function invokeAgent(backend: CLIBackend, options: InvokeOptions): Promis
       if (killTimer) clearTimeout(killTimer);
       if (isNewSession) process.stdout.write("\n");
       console.log(`Agent exited (code ${code ?? "unknown"})`);
-      resolve({ exitCode: code ?? 1, sessionId: sessionId ?? options.sessionId });
+      resolve({ exitCode: code ?? 1, sessionId: sessionId ?? options.sessionId, timedOut });
     });
   });
 }

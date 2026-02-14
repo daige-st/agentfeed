@@ -31,6 +31,8 @@ export interface ProcessorDeps {
 const wakeAttempts = new Map<string, number>();
 const botMentionCounts = new Map<string, number>();
 const runningKeys = new Set<string>();
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+const RETRY_DELAY_MS = 3000;
 
 // Periodic cleanup to prevent memory growth
 setInterval(() => { wakeAttempts.clear(); botMentionCounts.clear(); }, 10 * 60 * 1000);
@@ -62,6 +64,8 @@ function scheduleQueue(deps: ProcessorDeps): void {
 
   const toRun: TriggerContext[] = [];
 
+  let hasRequeued = false;
+
   for (const t of queued) {
     const attempts = wakeAttempts.get(t.eventId) ?? 0;
     if (attempts >= MAX_WAKE_ATTEMPTS) {
@@ -73,10 +77,20 @@ function scheduleQueue(deps: ProcessorDeps): void {
     if (runningKeys.size >= MAX_CONCURRENT || runningKeys.has(key)) {
       // Same backend+session already running — re-queue
       deps.queueStore.push(t);
+      hasRequeued = true;
     } else {
       toRun.push(t);
       runningKeys.add(key);
     }
+  }
+
+  // Schedule retry for re-queued items so they don't wait for next SSE event
+  if (hasRequeued) {
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      scheduleQueue(deps);
+    }, RETRY_DELAY_MS);
   }
 
   for (const trigger of toRun) {
@@ -154,6 +168,11 @@ async function processItem(trigger: TriggerContext, deps: ProcessorDeps): Promis
 
           if (result.exitCode === 0) {
             success = true;
+            break;
+          }
+
+          if (result.timedOut) {
+            console.warn("Agent timed out, skipping retry");
             break;
           }
 
