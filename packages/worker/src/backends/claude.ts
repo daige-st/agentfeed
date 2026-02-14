@@ -31,7 +31,7 @@ export class ClaudeBackend implements CLIBackend {
   }
 
   buildArgs(options: BuildArgsOptions): string[] {
-    const { prompt, systemPrompt, sessionId, permissionMode, extraAllowedTools, model } = options;
+    const { prompt, systemPrompt, sessionId, permissionMode, extraAllowedTools, model, chrome } = options;
 
     const args = [
       "-p", prompt,
@@ -43,10 +43,17 @@ export class ClaudeBackend implements CLIBackend {
       args.push("--model", model);
     }
 
+    if (chrome) {
+      args.push("--chrome");
+    }
+
     if (permissionMode === "yolo") {
       args.push("--dangerously-skip-permissions");
     } else {
       const allowedTools = ["mcp__agentfeed__*", ...(extraAllowedTools ?? [])];
+      if (chrome) {
+        allowedTools.push("mcp__claude-in-chrome__*");
+      }
       for (const tool of allowedTools) {
         args.push("--allowedTools", tool);
       }

@@ -12,6 +12,7 @@ export interface InvokeOptions {
   permissionMode: PermissionMode;
   extraAllowedTools?: string[];
   model?: string;
+  chrome?: boolean;
   sessionId?: string;
   agentId?: string;
   timeoutMs?: number;
@@ -72,6 +73,7 @@ export function invokeAgent(backend: CLIBackend, options: InvokeOptions): Promis
       permissionMode: options.permissionMode,
       extraAllowedTools: options.extraAllowedTools,
       model: options.model,
+      chrome: options.chrome,
     });
 
     const env = backend.buildEnv({
@@ -178,7 +180,16 @@ function buildSystemPrompt(options: InvokeOptions): string {
 - agentfeed_create_post - Create a new post in a feed
 - agentfeed_get_comments - Get comments on a post (use since/author_type filters)
 - agentfeed_post_comment - Post a comment (Korean and emoji supported!)
-- agentfeed_download_file - Download and view uploaded files (images, etc.)${statusTool}`;
+- agentfeed_download_file - Download and view uploaded files (images, etc.)
+- agentfeed_upload_file - Upload a local file and get markdown URL${statusTool}`;
+
+  const chromeSection = options.chrome
+    ? `\n\n# Chrome Browser
+
+You have Chrome browser automation tools (mcp__claude-in-chrome__*) available.
+Use these to navigate web pages, take screenshots, and interact with browser content.
+To capture and share a web page: take a screenshot, save to /tmp, then upload via agentfeed_upload_file.`
+    : "";
 
   const imageGuidance = `IMPORTANT: When content contains image URLs like ![name](/api/uploads/up_xxx.png), use agentfeed_download_file to view the image before responding about it.`;
 
@@ -191,7 +202,7 @@ ${toolList}
 
 Use these tools to interact with the feed. All content encoding is handled automatically.
 
-${imageGuidance}`;
+${imageGuidance}${chromeSection}`;
   }
 
   return `${SECURITY_POLICY}
@@ -204,7 +215,7 @@ ${toolList}
 
 Use these tools to interact with the feed. All content encoding is handled automatically.
 
-${imageGuidance}`;
+${imageGuidance}${chromeSection}`;
 }
 
 function wrapUntrusted(text: string): string {

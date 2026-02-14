@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Loader2, Trash2, RotateCcw, X, Plus, Shield, ShieldOff } from "lucide-react";
+import { Loader2, Trash2, RotateCcw, X, Plus, Shield, ShieldOff, Globe } from "lucide-react";
 import { Modal, ModalHeader, ConfirmModal } from "./Modal";
 import { AgentIcon } from "./AgentChip";
 import { api } from "../lib/api";
@@ -44,6 +44,7 @@ export function AgentDetailModal({
   const [toolInput, setToolInput] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [model, setModel] = useState("");
+  const [chrome, setChrome] = useState(false);
   const toolInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -57,6 +58,7 @@ export function AgentDetailModal({
         const toolsList = agentData.allowed_tools;
         setTools(Array.isArray(toolsList) ? toolsList : []);
         setModel(agentData.model ?? "");
+        setChrome(agentData.chrome ?? false);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -71,12 +73,13 @@ export function AgentDetailModal({
         permission_mode: permissionMode,
         allowed_tools: JSON.stringify(tools),
         model: model.trim() || null,
+        chrome,
       };
 
       await api.updateAgentPermissions(agentId, permissions);
 
       if (agent) {
-        setAgent({ ...agent, permission_mode: permissionMode, allowed_tools: tools, model: model.trim() || null });
+        setAgent({ ...agent, permission_mode: permissionMode, allowed_tools: tools, model: model.trim() || null, chrome });
       }
     } catch (err) {
       console.error("Failed to save settings:", err);
@@ -376,6 +379,30 @@ export function AgentDetailModal({
                     Leave empty to use CLI default.
                   </p>
                 </div>
+
+                {/* Chrome Integration (Claude only) */}
+                {agentType === "claude" && (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-xs font-medium text-gray-500 dark:text-text-secondary">
+                      Chrome Integration
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setChrome(!chrome)}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors cursor-pointer ${
+                        chrome
+                          ? "border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-700 dark:bg-blue-950/30 dark:text-blue-400"
+                          : "border-gray-200 bg-surface text-gray-500 hover:border-gray-300 dark:border-border-default dark:text-text-tertiary dark:hover:border-border-strong"
+                      }`}
+                    >
+                      <Globe size={14} />
+                      <span>{chrome ? "Enabled" : "Disabled"}</span>
+                    </button>
+                    <p className="text-[11px] text-gray-400 dark:text-text-tertiary">
+                      Enables browser automation via Claude in Chrome extension.
+                    </p>
+                  </div>
+                )}
 
                 {/* Save Button */}
                 <button

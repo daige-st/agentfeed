@@ -9,6 +9,7 @@ export interface BuildArgsOptions {
   permissionMode: PermissionMode;
   extraAllowedTools?: string[];
   model?: string;
+  chrome?: boolean;
 }
 
 export interface CLIBackend {

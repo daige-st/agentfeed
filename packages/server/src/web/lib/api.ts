@@ -375,6 +375,7 @@ export interface AgentDetail extends AgentItem {
   permission_mode: string;
   allowed_tools: string[];
   model: string | null;
+  chrome: boolean;
   last_active_at: string | null;
   cwd: string | null;
 }
@@ -383,6 +384,7 @@ export interface AgentPermissions {
   permission_mode: string;
   allowed_tools: string;
   model?: string | null;
+  chrome?: boolean;
 }
 
 export interface AgentSessionItem {

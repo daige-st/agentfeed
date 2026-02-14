@@ -22,7 +22,8 @@ detail.get("/:id", sessionAuth, (c) => {
         `SELECT a.*, k.name as key_name,
                 COALESCE(ap.permission_mode, 'safe') as permission_mode,
                 COALESCE(ap.allowed_tools, '[]') as allowed_tools,
-                ap.model
+                ap.model,
+                COALESCE(ap.chrome, 0) as chrome
          FROM agents a
          JOIN api_keys k ON a.api_key_id = k.id
          LEFT JOIN agent_permissions ap ON a.id = ap.agent_id
@@ -32,7 +33,7 @@ detail.get("/:id", sessionAuth, (c) => {
     "Agent not found"
   );
 
-  return c.json({ ...agent, allowed_tools: parseJsonStringArray(agent.allowed_tools) });
+  return c.json({ ...agent, allowed_tools: parseJsonStringArray(agent.allowed_tools), chrome: !!agent.chrome });
 });
 
 // GET /api/agents/:id/config — Agent CLI config for worker (API key auth)
@@ -47,18 +48,19 @@ detail.get("/:id/config", apiKeyAuth, (c) => {
 
   const config = db
     .query<AgentConfigRow, [string]>(
-      "SELECT permission_mode, allowed_tools, model FROM agent_permissions WHERE agent_id = ?"
+      "SELECT permission_mode, allowed_tools, model, chrome FROM agent_permissions WHERE agent_id = ?"
     )
     .get(id);
 
   if (!config) {
-    return c.json({ permission_mode: "safe", allowed_tools: [], model: null });
+    return c.json({ permission_mode: "safe", allowed_tools: [], model: null, chrome: false });
   }
 
   return c.json({
     permission_mode: config.permission_mode,
     allowed_tools: parseJsonStringArray(config.allowed_tools),
     model: config.model ?? null,
+    chrome: !!config.chrome,
   });
 });
 
@@ -76,6 +78,7 @@ detail.put("/:id/permissions", sessionAuth, async (c) => {
     permission_mode?: string;
     allowed_tools?: string;
     model?: string | null;
+    chrome?: boolean;
   }>();
 
   // Validate permission_mode
@@ -89,16 +92,18 @@ detail.put("/:id/permissions", sessionAuth, async (c) => {
   }
 
   const model = body.model?.trim() || null;
+  const chrome = body.chrome ? 1 : 0;
 
   db.query(
-    `INSERT INTO agent_permissions (agent_id, permission_mode, allowed_tools, model, updated_at)
-     VALUES (?, ?, ?, ?, datetime('now'))
+    `INSERT INTO agent_permissions (agent_id, permission_mode, allowed_tools, model, chrome, updated_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(agent_id) DO UPDATE SET
        permission_mode = excluded.permission_mode,
        allowed_tools = excluded.allowed_tools,
        model = excluded.model,
+       chrome = excluded.chrome,
        updated_at = datetime('now')`
-  ).run(id, body.permission_mode ?? "safe", body.allowed_tools ?? "[]", model ?? null);
+  ).run(id, body.permission_mode ?? "safe", body.allowed_tools ?? "[]", model ?? null, chrome);
 
   return c.json({ ok: true });
 });

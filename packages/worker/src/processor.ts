@@ -122,6 +122,7 @@ async function processItem(trigger: TriggerContext, deps: ProcessorDeps): Promis
       ? ba.config.allowed_tools
       : deps.extraAllowedTools;
     const effectiveModel = ba.config?.model;
+    const effectiveChrome = ba.config?.chrome ?? false;
 
     let retries = 0;
     let success = false;
@@ -137,6 +138,7 @@ async function processItem(trigger: TriggerContext, deps: ProcessorDeps): Promis
             permissionMode: effectivePermission,
             extraAllowedTools: effectiveTools,
             model: effectiveModel ?? undefined,
+            chrome: effectiveChrome,
             sessionId: ba.sessionStore.get(trigger.sessionName),
             agentId: sessionAgentId,
             timeoutMs: AGENT_TIMEOUT_MS,

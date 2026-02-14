@@ -30,10 +30,12 @@ export interface AgentDetailRow extends AgentRow {
   permission_mode: string;
   allowed_tools: string;
   model: string | null;
+  chrome: number;
 }
 
 export interface AgentConfigRow {
   permission_mode: string;
   allowed_tools: string;
   model: string | null;
+  chrome: number;
 }

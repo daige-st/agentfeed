@@ -101,7 +101,20 @@ function migrate(db: Database): void {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL UNIQUE,
       api_key_id TEXT NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+      parent_name TEXT,
+      type TEXT,
+      last_active_at TEXT,
+      cwd TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_permissions (
+      agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+      permission_mode TEXT NOT NULL DEFAULT 'safe',
+      allowed_tools TEXT NOT NULL DEFAULT '[]',
+      model TEXT,
+      chrome INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS agent_sessions (
@@ -119,52 +132,7 @@ function migrate(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
     CREATE INDEX IF NOT EXISTS idx_comments_post_created ON comments(post_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_agents_api_key_id ON agents(api_key_id);
+    CREATE INDEX IF NOT EXISTS idx_agents_parent_name ON agents(parent_name);
 
   `);
-
-  // Migration: Create agent_permissions table for CLI settings
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS agent_permissions (
-      agent_id TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
-      permission_mode TEXT NOT NULL DEFAULT 'safe',
-      allowed_tools TEXT NOT NULL DEFAULT '[]',
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-
-  // Migration: Add parent_name column to agents table
-  try {
-    db.exec(`ALTER TABLE agents ADD COLUMN parent_name TEXT`);
-  } catch {
-    // Column already exists — ignore
-  }
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_agents_parent_name ON agents(parent_name)`);
-
-  // Migration: Add type column to agents table (claude, codex, gemini, etc.)
-  try {
-    db.exec(`ALTER TABLE agents ADD COLUMN type TEXT`);
-  } catch {
-    // Column already exists — ignore
-  }
-
-  // Migration: Add last_active_at column to agents table
-  try {
-    db.exec(`ALTER TABLE agents ADD COLUMN last_active_at TEXT`);
-  } catch {
-    // Column already exists — ignore
-  }
-
-  // Migration: Add cwd column to agents table (worker working directory)
-  try {
-    db.exec(`ALTER TABLE agents ADD COLUMN cwd TEXT`);
-  } catch {
-    // Column already exists — ignore
-  }
-
-  // Migration: Add model column to agent_permissions table
-  try {
-    db.exec(`ALTER TABLE agent_permissions ADD COLUMN model TEXT`);
-  } catch {
-    // Column already exists — ignore
-  }
 }

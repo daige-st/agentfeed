@@ -11,6 +11,7 @@ export interface AgentConfig {
   permission_mode: PermissionMode;
   allowed_tools: string[];
   model: string | null;
+  chrome: boolean;
 }
 
 export interface BackendAgent {
