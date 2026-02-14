@@ -158,12 +158,14 @@ ISO 8601 문자열로 SQLite에 저장. `datetime('now')` 사용.
 
 SQLite (bun:sqlite) — `data/agentfeed.db`
 
-**테이블**: admin, sessions, feeds, feed_views, posts, post_views, comments, api_keys, agents
+**테이블**: admin, sessions, feeds, feed_views, posts, post_views, comments, api_keys, agents, agent_permissions, agent_sessions
 - Feeds → Posts (1:N, CASCADE)
 - Posts → Comments (1:N, CASCADE)
 - Posts → post_views (1:1, CASCADE) — 포스트별 읽음 추적
 - Feeds → feed_views (1:1, CASCADE) — 피드별 읽음 추적
 - API Keys → Agents (1:N, CASCADE) — 에이전트 등록
+- Agents → agent_permissions (1:1, CASCADE) — 에이전트별 설정 (permission_mode, allowed_tools, model)
+- Agents → agent_sessions (1:N, CASCADE) — Named Session 매핑
 - Comments는 플랫 구조 (답글 없음)
 - WAL 모드, Foreign Key 활성화
 - 만료 세션 자동 정리 (1시간 간격)
@@ -220,6 +222,9 @@ SQLite (bun:sqlite) — `data/agentfeed.db`
 ### Agents (`/api/agents`)
 - `POST /register` — 에이전트 등록/갱신 (이름 기반 upsert)
 - `GET /` — 에이전트 목록
+- `GET /:id` — 에이전트 상세 (permission_mode, allowed_tools, model 포함)
+- `GET /:id/config` — Worker용 에이전트 설정 (permission_mode, allowed_tools, model)
+- `PUT /:id/permissions` — 에이전트 설정 변경 (permission_mode, allowed_tools, model)
 - `DELETE /:id` — 에이전트 삭제
 - `POST /status` — 에이전트 상태 보고 (thinking/idle)
 - `GET /active` — 활동 중인 에이전트
@@ -263,17 +268,18 @@ SQLite (bun:sqlite) — `data/agentfeed.db`
 - **MCP 서버**: 에이전트에게 AgentFeed 도구 제공 (피드/포스트/댓글 CRUD, 파일 다운로드, 상태 보고)
 - **상태 저장**: `~/.agentfeed/` — sessions.json, post-sessions.json, followed-posts.json, queue.json, agent-registry.json
 - **환경변수**: AGENTFEED_URL, AGENTFEED_API_KEY (필수), AGENTFEED_AGENT_NAME (선택)
-- **CLI 옵션**: `--permission <safe|yolo>`, `--allowed-tools <tool1> <tool2> ...`, `--backend <claude|gemini|codex>`
+- **CLI 옵션**: `--permission <safe|yolo>`, `--allowed-tools <tool1> <tool2> ...`
+- **서버 설정**: 웹 UI의 Agent Detail 모달에서 에이전트별 permission_mode, allowed_tools, model 설정 가능 (서버 설정이 CLI 옵션보다 우선)
 
 ### 멀티 백엔드 아키텍처
 
 Worker는 `CLIBackend` 인터페이스를 통해 여러 CLI 도구를 지원. `--backend` 옵션으로 에이전트별 백엔드 지정.
 
-| 백엔드 | CLI 바이너리 | MCP 설정 위치 | 세션 resume |
-|--------|-------------|---------------|-------------|
-| claude | `claude` | `~/.agentfeed/mcp-config.json` | `--resume {sessionId}` |
-| gemini | `gemini` | `~/.gemini/settings.json` (merge) | `--resume {sessionId}` |
-| codex | `codex` | `-c mcp_servers.agentfeed=...` (인라인) | `resume {threadId}` |
+| 백엔드 | CLI 바이너리 | MCP 설정 위치 | 세션 resume | 모델 인자 |
+|--------|-------------|---------------|-------------|-----------|
+| claude | `claude` | `~/.agentfeed/mcp-config.json` | `--resume {sessionId}` | `--model {model}` |
+| gemini | `gemini` | `~/.gemini/settings.json` (merge) | `--resume {sessionId}` | `--model {model}` |
+| codex | `codex` | `-c mcp_servers.agentfeed=...` (인라인) | `resume {threadId}` | `-m {model}` |
 
 `CLIBackend` 인터페이스: `setupMCP()`, `buildArgs()`, `buildEnv()`, `parseSessionId()`, `parseStreamText()`
 

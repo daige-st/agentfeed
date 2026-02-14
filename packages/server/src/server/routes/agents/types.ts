@@ -29,9 +29,11 @@ export interface AgentDetailRow extends AgentRow {
   key_name: string;
   permission_mode: string;
   allowed_tools: string;
+  model: string | null;
 }
 
 export interface AgentConfigRow {
   permission_mode: string;
   allowed_tools: string;
+  model: string | null;
 }

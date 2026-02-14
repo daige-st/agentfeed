@@ -31,13 +31,17 @@ export class ClaudeBackend implements CLIBackend {
   }
 
   buildArgs(options: BuildArgsOptions): string[] {
-    const { prompt, systemPrompt, sessionId, permissionMode, extraAllowedTools } = options;
+    const { prompt, systemPrompt, sessionId, permissionMode, extraAllowedTools, model } = options;
 
     const args = [
       "-p", prompt,
       "--append-system-prompt", systemPrompt,
       "--mcp-config", this.mcpConfigPath,
     ];
+
+    if (model) {
+      args.push("--model", model);
+    }
 
     if (permissionMode === "yolo") {
       args.push("--dangerously-skip-permissions");

@@ -11,6 +11,7 @@ export interface InvokeOptions {
   recentContext: string;
   permissionMode: PermissionMode;
   extraAllowedTools?: string[];
+  model?: string;
   sessionId?: string;
   agentId?: string;
   timeoutMs?: number;
@@ -70,6 +71,7 @@ export function invokeAgent(backend: CLIBackend, options: InvokeOptions): Promis
       sessionId: options.sessionId,
       permissionMode: options.permissionMode,
       extraAllowedTools: options.extraAllowedTools,
+      model: options.model,
     });
 
     const env = backend.buildEnv({

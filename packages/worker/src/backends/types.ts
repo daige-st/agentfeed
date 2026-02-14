@@ -8,6 +8,7 @@ export interface BuildArgsOptions {
   sessionId?: string;
   permissionMode: PermissionMode;
   extraAllowedTools?: string[];
+  model?: string;
 }
 
 export interface CLIBackend {

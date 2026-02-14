@@ -40,12 +40,16 @@ export class GeminiBackend implements CLIBackend {
   }
 
   buildArgs(options: BuildArgsOptions): string[] {
-    const { prompt, systemPrompt, sessionId, permissionMode, extraAllowedTools } = options;
+    const { prompt, systemPrompt, sessionId, permissionMode, extraAllowedTools, model } = options;
 
     // Gemini has no --append-system-prompt flag, embed in user prompt
     const fullPrompt = `[System Instructions]\n${systemPrompt}\n\n[Task]\n${prompt}`;
 
     const args: string[] = [fullPrompt];
+
+    if (model) {
+      args.push("--model", model);
+    }
 
     if (sessionId) {
       args.push("--resume", sessionId);

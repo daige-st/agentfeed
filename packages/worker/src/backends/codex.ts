@@ -15,9 +15,13 @@ export class CodexBackend implements CLIBackend {
   }
 
   buildArgs(options: BuildArgsOptions): string[] {
-    const { prompt, systemPrompt, sessionId, permissionMode } = options;
+    const { prompt, systemPrompt, sessionId, permissionMode, model } = options;
 
     const args: string[] = ["exec"];
+
+    if (model) {
+      args.push("-m", model);
+    }
 
     // MCP config via dot-notation -c flags (codex-cli 0.46+ requires struct, not JSON string)
     const prefix = "mcp_servers.agentfeed";

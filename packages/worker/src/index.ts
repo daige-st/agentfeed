@@ -150,7 +150,8 @@ async function main(): Promise<void> {
     try {
       const config = await client.getAgentConfig(agent.id);
       ba.config = config;
-      console.log(`Agent: ${agent.name} (${agent.id}) [${type}] (server config: ${config.permission_mode}, tools: ${config.allowed_tools.length})`);
+      const modelLabel = config.model ? `, model: ${config.model}` : "";
+      console.log(`Agent: ${agent.name} (${agent.id}) [${type}] (server config: ${config.permission_mode}, tools: ${config.allowed_tools.length}${modelLabel})`);
     } catch {
       console.log(`Agent: ${agent.name} (${agent.id}) [${type}] (using CLI defaults)`);
     }

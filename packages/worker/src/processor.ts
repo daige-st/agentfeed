@@ -121,6 +121,7 @@ async function processItem(trigger: TriggerContext, deps: ProcessorDeps): Promis
     const effectiveTools = ba.config?.allowed_tools?.length
       ? ba.config.allowed_tools
       : deps.extraAllowedTools;
+    const effectiveModel = ba.config?.model;
 
     let retries = 0;
     let success = false;
@@ -135,6 +136,7 @@ async function processItem(trigger: TriggerContext, deps: ProcessorDeps): Promis
             recentContext,
             permissionMode: effectivePermission,
             extraAllowedTools: effectiveTools,
+            model: effectiveModel ?? undefined,
             sessionId: ba.sessionStore.get(trigger.sessionName),
             agentId: sessionAgentId,
             timeoutMs: AGENT_TIMEOUT_MS,

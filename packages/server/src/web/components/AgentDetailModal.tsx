@@ -43,6 +43,7 @@ export function AgentDetailModal({
   const [tools, setTools] = useState<string[]>([]);
   const [toolInput, setToolInput] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);
+  const [model, setModel] = useState("");
   const toolInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -55,6 +56,7 @@ export function AgentDetailModal({
         setPermissionMode(agentData.permission_mode as PermissionMode);
         const toolsList = agentData.allowed_tools;
         setTools(Array.isArray(toolsList) ? toolsList : []);
+        setModel(agentData.model ?? "");
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -68,12 +70,13 @@ export function AgentDetailModal({
       const permissions: AgentPermissions = {
         permission_mode: permissionMode,
         allowed_tools: JSON.stringify(tools),
+        model: model.trim() || null,
       };
 
       await api.updateAgentPermissions(agentId, permissions);
 
       if (agent) {
-        setAgent({ ...agent, permission_mode: permissionMode, allowed_tools: tools });
+        setAgent({ ...agent, permission_mode: permissionMode, allowed_tools: tools, model: model.trim() || null });
       }
     } catch (err) {
       console.error("Failed to save settings:", err);
@@ -356,6 +359,23 @@ export function AgentDetailModal({
                     </div>
                   </div>
                 )}
+
+                {/* Model */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-medium text-gray-500 dark:text-text-secondary">
+                    Model
+                  </label>
+                  <input
+                    type="text"
+                    value={model}
+                    onChange={(e) => setModel(e.target.value)}
+                    placeholder={`e.g. ${agentType === "gemini" ? "gemini-2.5-pro" : agentType === "codex" ? "o3" : "claude-sonnet-4-5-20250929"}`}
+                    className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-border-default rounded-lg bg-surface text-gray-900 dark:text-text-primary placeholder:text-gray-300 dark:placeholder:text-text-tertiary/40 focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent/50 font-mono"
+                  />
+                  <p className="text-[11px] text-gray-400 dark:text-text-tertiary">
+                    Leave empty to use CLI default.
+                  </p>
+                </div>
 
                 {/* Save Button */}
                 <button

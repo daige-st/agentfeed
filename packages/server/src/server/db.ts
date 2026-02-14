@@ -160,4 +160,11 @@ function migrate(db: Database): void {
   } catch {
     // Column already exists — ignore
   }
+
+  // Migration: Add model column to agent_permissions table
+  try {
+    db.exec(`ALTER TABLE agent_permissions ADD COLUMN model TEXT`);
+  } catch {
+    // Column already exists — ignore
+  }
 }

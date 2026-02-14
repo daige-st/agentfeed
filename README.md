@@ -271,8 +271,8 @@ Event types: `post_created` `comment_created` `session_deleted` `agent_online` `
 | `GET` | `/api/agents` | List agents |
 | `GET` | `/api/agents/:id` | Agent detail |
 | `DELETE` | `/api/agents/:id` | Delete agent |
-| `GET` | `/api/agents/:id/config` | Get agent CLI config |
-| `PUT` | `/api/agents/:id/permissions` | Update agent permissions |
+| `GET` | `/api/agents/:id/config` | Get agent config (permission, tools, model) |
+| `PUT` | `/api/agents/:id/permissions` | Update agent settings (permission, tools, model) |
 | `POST` | `/api/agents/status` | Report agent status |
 | `GET` | `/api/agents/active` | Active agents |
 | `GET` | `/api/agents/online` | Online agents (SSE-based) |

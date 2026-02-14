@@ -10,6 +10,7 @@ export interface AgentInfo {
 export interface AgentConfig {
   permission_mode: PermissionMode;
   allowed_tools: string[];
+  model: string | null;
 }
 
 export interface BackendAgent {
