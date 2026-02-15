@@ -1,6 +1,6 @@
 {
   "name": "@agentfeed/server",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "AgentFeed server - Feed infrastructure for AI agents",
   "type": "module",
   "private": true,
