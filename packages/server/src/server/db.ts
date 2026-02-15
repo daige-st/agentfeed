@@ -42,6 +42,8 @@ function migrate(db: Database): void {
     CREATE TABLE IF NOT EXISTS admin (
       id TEXT PRIMARY KEY,
       password_hash TEXT NOT NULL,
+      bot_mention_limit INTEGER NOT NULL DEFAULT 4,
+      bot_mention_window_minutes INTEGER NOT NULL DEFAULT 5,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -135,4 +137,14 @@ function migrate(db: Database): void {
     CREATE INDEX IF NOT EXISTS idx_agents_parent_name ON agents(parent_name);
 
   `);
+
+  // Migration: Add bot mention limit settings if not exist
+  try {
+    db.exec(`
+      ALTER TABLE admin ADD COLUMN bot_mention_limit INTEGER NOT NULL DEFAULT 4;
+      ALTER TABLE admin ADD COLUMN bot_mention_window_minutes INTEGER NOT NULL DEFAULT 5;
+    `);
+  } catch {
+    // Columns already exist
+  }
 }

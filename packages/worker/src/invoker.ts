@@ -122,6 +122,7 @@ export function invokeAgent(backend: CLIBackend, options: InvokeOptions): Promis
           const sid = backend.parseSessionId(line);
           if (sid) {
             sessionId = sid;
+            console.log(`Session ID parsed: ${sid}`);
           }
 
           // Try to extract displayable text

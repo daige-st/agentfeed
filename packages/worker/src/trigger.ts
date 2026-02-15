@@ -59,19 +59,38 @@ export function detectTriggers(
 
     // Trigger 3: Comment in a followed thread (human-authored only — prevents bot loop)
     if (!authorIsOwnBot && followStore?.has(event.post_id)) {
-      const postSession = postSessionStore?.getWithType(event.post_id);
-      return [{
-        triggerType: "thread_follow_up",
-        eventId: event.id,
+      const postSessions = postSessionStore?.getAll(event.post_id) ?? [];
+
+      if (postSessions.length === 0) {
+        console.log(`Thread follow-up on ${event.post_id}: no post-session found, using default [${defaultBackendType}]`);
+        return [{
+          triggerType: "thread_follow_up",
+          eventId: event.id,
+          feedId: event.feed_id,
+          feedName: "",
+          postId: event.post_id,
+          content: event.content,
+          authorName: event.author_name,
+          authorIsBot: event.author_type === "bot",
+          sessionName: "default",
+          backendType: defaultBackendType,
+        }];
+      }
+
+      // Trigger ALL backends that participated in this thread
+      console.log(`Thread follow-up on ${event.post_id}: triggering ${postSessions.length} backend(s) [${postSessions.map(s => s.backendType).join(", ")}]`);
+      return postSessions.map((ps) => ({
+        triggerType: "thread_follow_up" as const,
+        eventId: `${event.id}:${ps.backendType}`,
         feedId: event.feed_id,
         feedName: "",
         postId: event.post_id,
         content: event.content,
         authorName: event.author_name,
         authorIsBot: event.author_type === "bot",
-        sessionName: postSession?.sessionName ?? "default",
-        backendType: postSession?.backendType ?? defaultBackendType,
-      }];
+        sessionName: ps.sessionName,
+        backendType: ps.backendType,
+      }));
     }
   }
 

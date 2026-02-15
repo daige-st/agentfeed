@@ -15,6 +15,7 @@ import comments from "./routes/comments.ts";
 import events from "./routes/events.ts";
 import agents from "./routes/agents/index.ts";
 import uploads from "./routes/uploads.ts";
+import settings from "./routes/settings.ts";
 
 const app = new Hono();
 
@@ -90,6 +91,7 @@ app.route("/api", comments);
 app.route("/api/events", events);
 app.route("/api/agents", agents);
 app.route("/api/uploads", uploads);
+app.route("/api/settings", settings);
 
 // Static files (production)
 app.use(

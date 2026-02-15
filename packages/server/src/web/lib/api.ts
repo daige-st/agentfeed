@@ -276,6 +276,18 @@ class ApiClient {
 
     return res.json() as Promise<UploadResult>;
   }
+
+  // Settings
+  getSettings() {
+    return this.request<SystemSettings>("/api/settings");
+  }
+
+  updateSettings(settings: SystemSettings) {
+    return this.request<SystemSettings>("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    });
+  }
 }
 
 export const api = new ApiClient();
@@ -402,4 +414,9 @@ export interface UploadResult {
   url: string;
   mime_type: string;
   size: number;
+}
+
+export interface SystemSettings {
+  bot_mention_limit: number;
+  bot_mention_window_minutes: number;
 }

@@ -11,7 +11,10 @@ const MAX_WAKE_ATTEMPTS = 3;
 const MAX_CRASH_RETRIES = 3;
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CONCURRENT = 5;
-const MAX_BOT_MENTIONS_PER_POST = 4;
+
+// Time-window based bot mention limits (loaded from server)
+let botMentionLimit = 4;
+let botMentionWindowMs = 5 * 60 * 1000; // 5 minutes
 
 export interface ProcessorDeps {
   client: AgentFeedClient;
@@ -29,28 +32,61 @@ export interface ProcessorDeps {
 }
 
 const wakeAttempts = new Map<string, number>();
-const botMentionCounts = new Map<string, number>();
+const botMentionTimestamps = new Map<string, number[]>();
 const runningKeys = new Set<string>();
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 const RETRY_DELAY_MS = 3000;
 
 // Periodic cleanup to prevent memory growth
-setInterval(() => { wakeAttempts.clear(); botMentionCounts.clear(); }, 10 * 60 * 1000);
+setInterval(() => {
+  wakeAttempts.clear();
+  // Clean up old timestamps beyond the window
+  const now = Date.now();
+  for (const [postId, timestamps] of botMentionTimestamps.entries()) {
+    const recent = timestamps.filter((ts) => now - ts < botMentionWindowMs);
+    if (recent.length === 0) {
+      botMentionTimestamps.delete(postId);
+    } else {
+      botMentionTimestamps.set(postId, recent);
+    }
+  }
+}, 10 * 60 * 1000);
 
 function triggerKey(t: TriggerContext): string {
   return `${t.backendType}:${t.sessionName}`;
 }
 
+export async function loadSettings(client: AgentFeedClient): Promise<void> {
+  try {
+    const settings = await client.getSettings();
+    botMentionLimit = settings.bot_mention_limit;
+    botMentionWindowMs = settings.bot_mention_window_minutes * 60 * 1000;
+    console.log(`Loaded settings: bot_mention_limit=${botMentionLimit}, bot_mention_window_minutes=${settings.bot_mention_window_minutes}`);
+  } catch (err) {
+    console.error("Failed to load settings from server, using defaults:", err);
+  }
+}
+
 export function handleTriggers(triggers: TriggerContext[], deps: ProcessorDeps): void {
+  const now = Date.now();
+
   for (const t of triggers) {
-    // Prevent bot-to-bot mention loops
+    // Prevent bot-to-bot mention loops (time-window based)
     if (t.authorIsBot && t.triggerType === "mention") {
-      const count = botMentionCounts.get(t.postId) ?? 0;
-      if (count >= MAX_BOT_MENTIONS_PER_POST) {
-        console.log(`Skipping bot mention on ${t.postId}: loop limit (${MAX_BOT_MENTIONS_PER_POST}) reached`);
+      const timestamps = botMentionTimestamps.get(t.postId) ?? [];
+      // Filter timestamps within the current window
+      const recentTimestamps = timestamps.filter((ts) => now - ts < botMentionWindowMs);
+
+      if (recentTimestamps.length >= botMentionLimit) {
+        console.log(
+          `Skipping bot mention on ${t.postId}: loop limit (${botMentionLimit} mentions in ${botMentionWindowMs / 1000 / 60} minutes) reached`
+        );
         continue;
       }
-      botMentionCounts.set(t.postId, count + 1);
+
+      // Record this mention
+      recentTimestamps.push(now);
+      botMentionTimestamps.set(t.postId, recentTimestamps);
     }
     deps.queueStore.push(t);
     console.log(`Queued trigger: ${t.triggerType} on ${t.postId} [${t.backendType}] (queue size: ${deps.queueStore.size})`);
@@ -161,9 +197,12 @@ async function processItem(trigger: TriggerContext, deps: ProcessorDeps): Promis
           if (result.sessionId) {
             ba.sessionStore.set(trigger.sessionName, result.sessionId);
             deps.postSessionStore.set(trigger.postId, trigger.backendType, trigger.sessionName);
+            console.log(`Saved post-session mapping: ${trigger.postId} → [${trigger.backendType}] ${trigger.sessionName}`);
             await deps.client.reportSession(trigger.sessionName, result.sessionId, sessionAgentId).catch((err) => {
               console.warn("Failed to report session:", err);
             });
+          } else {
+            console.warn(`No session ID returned by ${trigger.backendType}, post-session mapping not saved`);
           }
 
           if (result.exitCode === 0) {

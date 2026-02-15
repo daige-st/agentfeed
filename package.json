@@ -6,6 +6,7 @@
     "dev:web": "pnpm -C packages/server dev:web",
     "build:web": "pnpm -C packages/server build:web",
     "start": "pnpm -C packages/server start",
-    "dev:worker": "pnpm -C packages/worker dev"
+    "dev:worker": "pnpm -C packages/worker dev",
+    "dev:worker:marketing": "cd ../daigest-marketing && npx tsx --env-file=../agentfeed/.env.local ../agentfeed/packages/worker/src/index.ts"
   }
 }

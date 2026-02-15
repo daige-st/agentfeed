@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router";
-import { KeyRound, Trash2, ChevronLeft, Plus, LogOut, Loader2 } from "lucide-react";
+import { KeyRound, Trash2, ChevronLeft, Plus, LogOut, Loader2, Settings as SettingsIcon } from "lucide-react";
 import { MdContentCopy, MdCheck } from "react-icons/md";
-import { api, type ApiKeyItem } from "../lib/api";
+import { api, type ApiKeyItem, type SystemSettings } from "../lib/api";
 import { Modal, ModalHeader } from "../components/Modal";
 
 export function Settings({ onLogout }: { onLogout: () => void }) {
@@ -10,6 +10,8 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createdKey, setCreatedKey] = useState<{ name: string; key: string } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
   const navigate = useNavigate();
 
   const loadKeys = useCallback(async () => {
@@ -23,9 +25,19 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
     }
   }, []);
 
+  const loadSystemSettings = useCallback(async () => {
+    try {
+      const data = await api.getSettings();
+      setSystemSettings(data);
+    } catch (err) {
+      console.error("Failed to load system settings:", err);
+    }
+  }, []);
+
   useEffect(() => {
     loadKeys();
-  }, [loadKeys]);
+    loadSystemSettings();
+  }, [loadKeys, loadSystemSettings]);
 
   const handleCreated = (name: string, key: string) => {
     setShowCreateModal(false);
@@ -39,6 +51,19 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
       loadKeys();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleSaveSettings = async (newSettings: SystemSettings) => {
+    setSavingSettings(true);
+    try {
+      const updated = await api.updateSettings(newSettings);
+      setSystemSettings(updated);
+    } catch (err) {
+      console.error("Failed to save settings:", err);
+      alert("Failed to save settings");
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -75,6 +100,15 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
             Set up API keys and connect your agent worker.
           </p>
         </div>
+
+        {/* System Settings */}
+        {systemSettings && (
+          <SystemSettingsSection
+            settings={systemSettings}
+            onSave={handleSaveSettings}
+            saving={savingSettings}
+          />
+        )}
 
         {/* Steps */}
         <div className="flex flex-col gap-3">
@@ -178,6 +212,95 @@ export function Settings({ onLogout }: { onLogout: () => void }) {
           onClose={() => setCreatedKey(null)}
         />
       )}
+    </div>
+  );
+}
+
+// --- System Settings Section ---
+
+function SystemSettingsSection({
+  settings,
+  onSave,
+  saving,
+}: {
+  settings: SystemSettings;
+  onSave: (settings: SystemSettings) => void;
+  saving: boolean;
+}) {
+  const [botMentionLimit, setBotMentionLimit] = useState(settings.bot_mention_limit);
+  const [botMentionWindowMinutes, setBotMentionWindowMinutes] = useState(
+    settings.bot_mention_window_minutes
+  );
+  const [hasChanges, setHasChanges] = useState(false);
+
+  useEffect(() => {
+    const changed =
+      botMentionLimit !== settings.bot_mention_limit ||
+      botMentionWindowMinutes !== settings.bot_mention_window_minutes;
+    setHasChanges(changed);
+  }, [botMentionLimit, botMentionWindowMinutes, settings]);
+
+  const handleSave = () => {
+    onSave({
+      bot_mention_limit: botMentionLimit,
+      bot_mention_window_minutes: botMentionWindowMinutes,
+    });
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 dark:border-border-default bg-surface p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <SettingsIcon className="w-4 h-4 text-gray-500 dark:text-text-secondary" />
+        <p className="text-sm font-medium text-gray-900 dark:text-text-primary">
+          Bot Mention Limits
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <div>
+          <label className="text-xs text-gray-500 dark:text-text-secondary mb-1.5 block">
+            Max mentions per post (time window)
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="100"
+            value={botMentionLimit}
+            onChange={(e) => setBotMentionLimit(Number(e.target.value))}
+            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-border-default rounded-lg bg-surface text-gray-900 dark:text-text-primary focus:outline-none focus:ring-2 focus:ring-border-secondary"
+          />
+          <p className="text-xs text-gray-400 dark:text-text-tertiary mt-1">
+            Maximum bot-to-bot mentions allowed within the time window to prevent loops.
+          </p>
+        </div>
+
+        <div>
+          <label className="text-xs text-gray-500 dark:text-text-secondary mb-1.5 block">
+            Time window (minutes)
+          </label>
+          <input
+            type="number"
+            min="1"
+            max="60"
+            value={botMentionWindowMinutes}
+            onChange={(e) => setBotMentionWindowMinutes(Number(e.target.value))}
+            className="w-full px-3 py-2 text-sm border border-gray-200 dark:border-border-default rounded-lg bg-surface text-gray-900 dark:text-text-primary focus:outline-none focus:ring-2 focus:ring-border-secondary"
+          />
+          <p className="text-xs text-gray-400 dark:text-text-tertiary mt-1">
+            Time window for counting bot mentions.
+          </p>
+        </div>
+
+        {hasChanges && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-accent text-accent-foreground hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+          >
+            {saving ? "Saving..." : "Save Changes"}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

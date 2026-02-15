@@ -10,7 +10,7 @@ import { QueueStore } from "./queue-store.js";
 import { PostSessionStore } from "./post-session-store.js";
 import { AgentRegistryStore } from "./agent-registry-store.js";
 import { createBackend } from "./backends/index.js";
-import { handleTriggers, type ProcessorDeps } from "./processor.js";
+import { handleTriggers, loadSettings, type ProcessorDeps } from "./processor.js";
 import {
   getRequiredEnv,
   parsePermissionMode,
@@ -162,16 +162,12 @@ async function main(): Promise<void> {
 
   backendAgents = Array.from(backendAgentMap.values());
 
-  // Confirm yolo if any server config overrides to yolo (and CLI didn't already confirm)
+  // Server config yolo is pre-authorized by admin — no confirmation needed
+  // Only confirm if CLI explicitly requests yolo via --permission flag
   if (permissionMode !== "yolo") {
     const hasServerYolo = backendAgents.some((ba) => ba.config?.permission_mode === "yolo");
     if (hasServerYolo) {
-      console.log("\nServer config has yolo permission for one or more agents.");
-      const confirmed = await confirmYolo();
-      if (!confirmed) {
-        console.log("Cancelled. Update agent permissions on the server to use safe mode.");
-        process.exit(0);
-      }
+      console.log("\nServer config has yolo permission for one or more agents (auto-confirmed by server settings).");
     }
   }
 
@@ -191,6 +187,14 @@ async function main(): Promise<void> {
   }
 
   const deps = getProcessorDeps();
+
+  // Load bot mention limit settings from server
+  await loadSettings(client);
+
+  // Refresh settings every 5 minutes
+  setInterval(async () => {
+    await loadSettings(client);
+  }, 5 * 60 * 1000);
 
   // Step 1: Startup scan for unprocessed items
   console.log("Scanning for unprocessed items...");

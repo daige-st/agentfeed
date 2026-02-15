@@ -143,4 +143,8 @@ export class AgentFeedClient {
       agentId,
     });
   }
+
+  async getSettings(): Promise<{ bot_mention_limit: number; bot_mention_window_minutes: number }> {
+    return this.request("/api/settings");
+  }
 }
