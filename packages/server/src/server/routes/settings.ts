@@ -56,9 +56,14 @@ app.put("/", sessionAuth, async (c) => {
   }
 
   const db = getDb();
+  // Update the single admin record (there's only one)
+  const admin = db.query<{ id: string }, []>("SELECT id FROM admin LIMIT 1").get();
+  if (!admin) {
+    return c.json(errorResponse("ADMIN_NOT_FOUND", "Admin not found"), 404);
+  }
   db.query(
-    "UPDATE admin SET bot_mention_limit = ?, bot_mention_window_minutes = ? WHERE id = 'ad_singleton'"
-  ).run(bot_mention_limit, bot_mention_window_minutes);
+    "UPDATE admin SET bot_mention_limit = ?, bot_mention_window_minutes = ? WHERE id = ?"
+  ).run(bot_mention_limit, bot_mention_window_minutes, admin.id);
 
   const updated = db.query<SettingsRow, []>(
     "SELECT bot_mention_limit, bot_mention_window_minutes FROM admin LIMIT 1"
